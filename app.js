@@ -18,6 +18,7 @@ const DEFAULT_DETECTION_LIMITS = Object.freeze({
   minFingerprintVotes: 2,
   minFingerprintSimilarity: 0.08,
   minRhythmSimilarity: 0.36,
+  minTopMatchMargin: 5,
 });
 const SUBSEQUENCE_STRIDE_DIVISOR = 18;
 const FINGERPRINT_MAX_NEIGHBORS = 5;
@@ -1341,15 +1342,19 @@ async function stopListening({ manual = false } = {}) {
     return;
   }
 
-  if (!isReliableMatch(bestMatch, state.settings)) {
+  const ambiguity = getMatchAmbiguity(results);
+  if (!isReliableMatch(bestMatch, state.settings) || ambiguity) {
+    const ambiguityMeta = ambiguity
+      ? `Resultado parecido entre "${bestMatch.reference.name}" y "${ambiguity.reference.name}". Repite la escucha con el tambor más claro para confirmar.`
+      : `Resultado no concluyente tras ${capturedSeconds.toFixed(1)} s de escucha. La señal no reúne evidencia suficiente para confirmar un toque. Prueba otra captura con más volumen, menos ruido o más cerca del tambor.`;
     updateResult({
-      name: "Sin detección fiable",
-      meta: `Resultado no concluyente tras ${capturedSeconds.toFixed(1)} s de escucha. La señal no reúne evidencia suficiente para confirmar un toque. Prueba otra captura con más volumen, menos ruido o más cerca del tambor.`,
+      name: ambiguity ? "Resultado ambiguo" : "Sin detección fiable",
+      meta: ambiguityMeta,
       confidence: 0,
-      matches: [],
+      matches: results,
       analysis: features,
     });
-    updateStatus("idle", "No concluyente");
+    updateStatus("idle", ambiguity ? "Ambiguo" : "No concluyente");
     resetIdleUi();
     return;
   }
@@ -2142,6 +2147,23 @@ function isReliableMatch(match, settings) {
       match.alignment.similarity >= detectionLimit("minRhythmSimilarity")
     )
   );
+}
+
+function getMatchAmbiguity(matches) {
+  const best = matches[0];
+  const second = matches[1];
+  if (!best || !second) {
+    return null;
+  }
+
+  const margin = best.confidence - second.confidence;
+  const minimumMargin = detectionLimit("minTopMatchMargin");
+  const secondIsPlausible =
+    second.confidence >= Math.max(detectionLimit("minMatchConfidence"), state.settings.minimumConfidence - 8) &&
+    second.evidenceScore >= detectionLimit("minMatchEvidence") &&
+    second.alignment.fingerprintVotes >= detectionLimit("minFingerprintVotes");
+
+  return margin < minimumMargin && secondIsPlausible ? second : null;
 }
 
 function clamp(value, min, max) {

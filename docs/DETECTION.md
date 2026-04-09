@@ -119,5 +119,8 @@ Con esas estadisticas propone variables como:
 - `minFingerprintVotes`
 - `minFingerprintSimilarity`
 - `minRhythmSimilarity`
+- `minTopMatchMargin`
 
-Regla practica: si aparecen falsos positivos, subir umbrales de evidencia. Si aparecen demasiados falsos negativos con toques reales claros, bajar ligeramente `minMatchEvidence` o `minRhythmicStability`.
+`minTopMatchMargin` evita confirmar un toque cuando el primer y segundo resultado quedan demasiado cerca. En ese caso la app muestra resultado ambiguo y pide repetir la escucha.
+
+Regla practica: si aparecen falsos positivos, subir umbrales de evidencia. Si aparecen demasiados falsos negativos con toques reales claros, bajar ligeramente `minMatchEvidence` o `minRhythmicStability`. Si aparecen confusiones entre dos toques muy parecidos, subir ligeramente `minTopMatchMargin`.

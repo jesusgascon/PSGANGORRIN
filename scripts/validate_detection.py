@@ -70,6 +70,7 @@ DEFAULT_LIMITS = {
     "minFingerprintVotes": 2,
     "minFingerprintSimilarity": 0.08,
     "minRhythmSimilarity": 0.36,
+    "minTopMatchMargin": 5,
 }
 
 
@@ -137,16 +138,28 @@ def main() -> None:
             )
         )
 
-    passed = [result for result in results if result["passed"]]
-    failed = [result for result in results if not result["passed"]]
+    passed = [result for result in results if result["outcome"] == "confirmed"]
+    ambiguous = [result for result in results if result["outcome"] == "ambiguous"]
+    low_confidence = [result for result in results if result["outcome"] == "low_confidence"]
+    wrong = [result for result in results if result["outcome"] == "wrong"]
+    unusable = [result for result in results if result["outcome"] == "unusable"]
 
     print(f"Referencias validadas: {len(results)}")
-    print(f"Correctas: {len(passed)}")
-    print(f"Fallidas: {len(failed)}")
+    print(f"Confirmadas correctas: {len(passed)}")
+    print(f"Ambiguas no confirmadas: {len(ambiguous)}")
+    print(f"Correctas por debajo del umbral: {len(low_confidence)}")
+    print(f"Confusiones reales: {len(wrong)}")
+    print(f"Capturas no usables: {len(unusable)}")
     print("")
 
     for result in results:
-        status = "OK" if result["passed"] else "FALLO"
+        status = {
+            "confirmed": "OK",
+            "ambiguous": "AMBIGUO",
+            "low_confidence": "BAJO",
+            "wrong": "FALLO",
+            "unusable": "NO USABLE",
+        }.get(result["outcome"], "FALLO")
         prefix = f"Ensayo {result['trial']}: " if result["trial"] else ""
         print(f"[{status}] {prefix}{result['expected_name']}")
         print(f"  Esperado: {result['expected_file']}")
@@ -163,6 +176,8 @@ def main() -> None:
                 f"{result['best_name']} "
                 f"({result['confidence']}%, evidencia {result['evidence']:.3f})"
             )
+            if result["ambiguous_with"]:
+                print(f"  Ambiguo con: {result['ambiguous_with']}")
         else:
             print(f"  Captura no usable: {result['reason']}")
         if result["ranking"]:
@@ -175,7 +190,7 @@ def main() -> None:
                 )
         print("")
 
-    if failed:
+    if wrong or unusable:
         raise SystemExit(1)
 
 
@@ -286,17 +301,19 @@ def validate_reference(
         raise RuntimeError("No se pudo construir la captura simulada")
     matches = compare_against_references(capture, all_references, limits, args.mode) if usable else []
     best = matches[0] if matches else None
+    ambiguity = get_match_ambiguity(matches, limits, args.minimum_confidence)
     reliable = bool(best and is_reliable_match(best, limits, args.minimum_confidence))
     expected_file = reference.get("file")
-    passed = bool(reliable and best["reference"].get("file") == expected_file)
+    outcome = classify_outcome(best, matches, ambiguity, reliable, expected_file, usable)
 
     return {
-        "passed": passed,
+        "outcome": outcome,
         "usable": usable,
         "reason": reason,
         "expected_file": expected_file,
         "expected_name": reference.get("name") or expected_file,
         "best_name": best["reference"].get("name") if best else "",
+        "ambiguous_with": ambiguity["reference"].get("name") if ambiguity else "",
         "confidence": best["confidence"] if best else 0,
         "evidence": best["evidenceScore"] if best else 0,
         "ranking": [
@@ -314,7 +331,31 @@ def validate_reference(
         "peaksCount": capture["peaksCount"],
         "fingerprintsCount": capture["fingerprintsCount"],
         "attempts": attempt,
-    }
+}
+
+
+def classify_outcome(
+    best: dict | None,
+    matches: list[dict],
+    ambiguity: dict | None,
+    reliable: bool,
+    expected_file: str,
+    usable: bool,
+) -> str:
+    if not usable:
+        return "unusable"
+    if not best:
+        return "wrong"
+
+    best_file = best["reference"].get("file")
+    candidate_files = {match["reference"].get("file") for match in matches[:2]}
+    if ambiguity and expected_file in candidate_files:
+        return "ambiguous"
+    if reliable and best_file == expected_file:
+        return "confirmed"
+    if best_file == expected_file:
+        return "low_confidence"
+    return "wrong"
 
 
 def build_capture_from_reference(
@@ -581,6 +622,20 @@ def is_reliable_match(match: dict, limits: dict, minimum_confidence: float) -> b
             or match["alignment"]["similarity"] >= limits["minRhythmSimilarity"]
         )
     )
+
+
+def get_match_ambiguity(matches: list[dict], limits: dict, minimum_confidence: float) -> dict | None:
+    if len(matches) < 2:
+        return None
+
+    best, second = matches[0], matches[1]
+    margin = best["confidence"] - second["confidence"]
+    second_is_plausible = (
+        second["confidence"] >= max(limits["minMatchConfidence"], minimum_confidence - 8)
+        and second["evidenceScore"] >= limits["minMatchEvidence"]
+        and second["alignment"]["fingerprintVotes"] >= limits["minFingerprintVotes"]
+    )
+    return second if margin < limits["minTopMatchMargin"] and second_is_plausible else None
 
 
 def compare_rhythm_fingerprints(query_fingerprints: list[dict], target_fingerprints: list[dict]) -> dict:

@@ -52,8 +52,11 @@ Salida correcta:
 
 ```text
 Referencias validadas: 20
-Correctas: 20
-Fallidas: 0
+Confirmadas correctas: 20
+Ambiguas no confirmadas: 0
+Correctas por debajo del umbral: 0
+Confusiones reales: 0
+Capturas no usables: 0
 ```
 
 Cada bloque muestra:
@@ -63,6 +66,14 @@ Cada bloque muestra:
 - el porcentaje de confianza
 - la evidencia interna
 - el ranking de alternativas
+
+El validador separa los casos no confirmados:
+
+- `OK`: la app confirmaria el toque correcto.
+- `AMBIGUO`: hay dos toques muy cercanos; la app no debe confirmar ninguno.
+- `BAJO`: el toque correcto sale primero, pero por debajo del umbral.
+- `FALLO`: la app confirmaria un toque incorrecto.
+- `NO USABLE`: el fragmento no tiene calidad suficiente para detectar.
 
 ## Que Significa Un Fallo
 
@@ -88,8 +99,11 @@ Con la biblioteca actual, la validacion completa pasa:
 
 ```text
 Referencias validadas: 20
-Correctas: 20
-Fallidas: 0
+Confirmadas correctas: 20
+Ambiguas no confirmadas: 0
+Correctas por debajo del umbral: 0
+Confusiones reales: 0
+Capturas no usables: 0
 ```
 
 Esto confirma que, usando fragmentos simulados de 6 segundos, cada toque se reconoce a si mismo como mejor coincidencia.
@@ -98,8 +112,24 @@ Ensayo aleatorio usable de 20 pruebas:
 
 ```text
 Referencias validadas: 20
-Correctas: 20
-Fallidas: 0
+Confirmadas correctas: 20
+Ambiguas no confirmadas: 0
+Correctas por debajo del umbral: 0
+Confusiones reales: 0
+Capturas no usables: 0
 ```
 
 Ese ensayo usa fragmentos aleatorios entre 4 y 8 segundos, evitando partes sin golpes suficientes.
+
+Ensayo de estres de 400 pruebas con fragmentos activos de 4 a 12 segundos:
+
+```text
+Referencias validadas: 400
+Confirmadas correctas: 386
+Ambiguas no confirmadas: 10
+Correctas por debajo del umbral: 4
+Confusiones reales: 0
+Capturas no usables: 0
+```
+
+Este resultado es preferible a confirmar siempre: cuando dos toques quedan demasiado cerca, la app muestra resultado ambiguo y pide repetir la escucha.

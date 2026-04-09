@@ -234,6 +234,7 @@ Resultados esperados:
 - Ruido: sin deteccion fiable.
 - Golpes aislados: normalmente sin deteccion fiable.
 - Toque real claro: deteccion si supera el umbral.
+- Toques muy parecidos: resultado ambiguo; la app pide repetir en vez de confirmar uno al azar.
 - Toque real con mucho ruido: mejor no detectar antes que inventar una coincidencia.
 
 Mas detalle en:
@@ -329,6 +330,8 @@ python3 scripts/validate_detection.py --runs 5 --min-seconds 4 --max-seconds 8 -
 ```
 
 Esta prueba no usa el microfono. Toma un fragmento simulado de cada MP3, lo compara contra la biblioteca y comprueba que la mejor coincidencia sea el mismo archivo.
+
+El validador distingue entre detecciones confirmadas, resultados ambiguos, resultados por debajo del umbral y confusiones reales. Un resultado ambiguo no se considera una deteccion segura: la app pide repetir la escucha.
 
 Comprobacion rapida de CSS:
 

@@ -17,7 +17,8 @@
     "minMatchEvidence": 0.42,
     "minFingerprintVotes": 4,
     "minFingerprintSimilarity": 0.08,
-    "minRhythmSimilarity": 0.36
+    "minRhythmSimilarity": 0.36,
+    "minTopMatchMargin": 5
   },
   "statistics": {
     "durationSeconds": {

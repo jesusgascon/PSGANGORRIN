@@ -5,6 +5,7 @@
 - Ajuste visual de la barra inferior del modo usuario en movil para evitar botones cortados o desalineados.
 - El boton Escuchar de la barra inferior queda alineado tambien al terminar la escucha.
 - Cache publica actualizada para que GitHub Pages entregue estilos nuevos tambien bajo la ruta `/PSGANGORRIN/`.
+- Deteccion mas prudente: si dos toques quedan demasiado cerca, se muestra resultado ambiguo en vez de confirmar uno.
 
 ## v1.1.0
 
