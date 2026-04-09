@@ -352,6 +352,8 @@ python3 scripts/analyze_capture.py /tmp/cofrabeat-mic-tests/*.wav --mode field
 
 Este comando sirve para pruebas de campo. Si el audio se grabo por microfono real, mostrara si la captura es usable, que tramo se ha elegido y que ranking obtiene.
 
+La captura real se limpia de forma suave antes de analizarla: se centra la senal, se reduce ruido bajo entre golpes y se evita subir artificialmente volumen a ruido debil.
+
 Comprobacion rapida de CSS:
 
 ```bash

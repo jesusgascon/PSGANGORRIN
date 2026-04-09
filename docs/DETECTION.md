@@ -42,6 +42,15 @@ El modo `Micro real` baja el umbral visible para permitir capturas de altavoz, p
 
 La escucha real no siempre empieza justo cuando empieza el toque. Puede haber silencio inicial, eco final, ruido de sala o un golpe aislado antes del patron principal.
 
+Antes de buscar esos tramos, la captura de microfono recibe un preprocesado suave:
+
+- se elimina el desplazamiento DC de la senal
+- se calcula el ruido de fondo aproximado
+- se atenúan muestras muy bajas entre golpes con una puerta de ruido suave
+- no se sube artificialmente el volumen de una captura debil
+
+Esta ultima regla es importante: normalizar a tope cualquier audio haria que ruido bajo pareciera una senal fuerte. CofraBeat normaliza internamente la forma de la envolvente para comparar patrones, pero mantiene las metricas de energia para poder rechazar silencio o ruido.
+
 Para reducir ese problema, CofraBeat no compara solo la grabacion completa. Primero crea varios tramos candidatos:
 
 - grabacion completa

@@ -10,6 +10,7 @@
 - Perfil `Micro real` reforzado: escucha por defecto de 10 segundos, umbral visible mas realista, ranking ordenado por confianza final y avisos de senal baja, saturacion o captura ambigua.
 - Analisis por tramos activos dentro de la captura para mejorar escuchas reales con silencio, eco o ruido de sala.
 - Nuevo script `scripts/analyze_capture.py` para analizar WAV/MP3 reales grabados con microfono o monitor del sistema.
+- Preprocesado suave de capturas reales: centrado DC y puerta de ruido ligera sin amplificar ruido debil.
 
 ## v1.1.0
 

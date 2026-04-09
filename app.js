@@ -1367,13 +1367,15 @@ function processCapturedSignal(inputSignal, capturedSeconds) {
     return;
   }
 
+  const preparedCapture = prepareCaptureSignalForAnalysis(inputSignal);
   const candidate = analyseCaptureCandidates(
-    inputSignal,
+    preparedCapture.signal,
     state.audioContext.sampleRate,
     state.references,
     state.settings.analysisMode,
   );
   const features = candidate.features;
+  features.capturePreprocess = preparedCapture.metrics;
 
   if (!candidate.usable) {
     updateResult({
@@ -1840,6 +1842,84 @@ function analyseSignal(signal, sampleRate) {
       onsetStats.contrast,
       rhythmicStability,
     ),
+  };
+}
+
+function prepareCaptureSignalForAnalysis(signal) {
+  const sourceStats = measureSignal(signal);
+  if (!signal.length) {
+    return {
+      signal,
+      metrics: { applied: false, sourceRms: 0, sourcePeak: 0, processedRms: 0, processedPeak: 0 },
+    };
+  }
+
+  let sum = 0;
+  for (let index = 0; index < signal.length; index += 1) {
+    sum += signal[index];
+  }
+  const dcOffset = sum / signal.length;
+  const centered = new Float32Array(signal.length);
+  const absSamples = [];
+  const sampleStep = Math.max(1, Math.floor(signal.length / 2400));
+
+  for (let index = 0; index < signal.length; index += 1) {
+    const value = signal[index] - dcOffset;
+    centered[index] = value;
+    if (index % sampleStep === 0) {
+      absSamples.push(Math.abs(value));
+    }
+  }
+
+  const centeredStats = measureSignal(centered);
+  if (
+    centeredStats.rms < detectionLimit("minSignalRms") * 0.55 ||
+    centeredStats.peak < detectionLimit("minSignalPeak") * 0.55
+  ) {
+    return {
+      signal: centered,
+      metrics: {
+        applied: Math.abs(dcOffset) > 0.0005,
+        dcOffset,
+        noiseGateThreshold: 0,
+        sourceRms: sourceStats.rms,
+        sourcePeak: sourceStats.peak,
+        processedRms: centeredStats.rms,
+        processedPeak: centeredStats.peak,
+      },
+    };
+  }
+
+  absSamples.sort((left, right) => left - right);
+  const noiseFloor = absSamples[Math.floor(absSamples.length * 0.35)] || 0;
+  const gateThreshold = Math.max(noiseFloor * 2.2, centeredStats.rms * 0.055, 0.0015);
+  const processed = new Float32Array(centered.length);
+
+  for (let index = 0; index < centered.length; index += 1) {
+    const value = centered[index];
+    const absolute = Math.abs(value);
+    if (absolute < gateThreshold) {
+      processed[index] = value * 0.22;
+    } else if (absolute < gateThreshold * 1.8) {
+      const mix = (absolute - gateThreshold) / gateThreshold;
+      processed[index] = value * clamp(0.22 + mix * 0.5, 0.22, 0.72);
+    } else {
+      processed[index] = value;
+    }
+  }
+
+  const processedStats = measureSignal(processed);
+  return {
+    signal: processed,
+    metrics: {
+      applied: true,
+      dcOffset,
+      noiseGateThreshold: gateThreshold,
+      sourceRms: sourceStats.rms,
+      sourcePeak: sourceStats.peak,
+      processedRms: processedStats.rms,
+      processedPeak: processedStats.peak,
+    },
   };
 }
 

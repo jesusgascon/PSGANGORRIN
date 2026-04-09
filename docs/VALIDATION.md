@@ -62,6 +62,8 @@ python3 scripts/analyze_capture.py /tmp/cofrabeat-mic-tests/*.wav --mode field
 
 Este comando usa la misma logica de tramos activos que la app web y muestra si la captura es usable, el ranking y si el resultado queda confirmado o ambiguo.
 
+El analisis de capturas reales tambien aplica la misma limpieza suave que la app: centra la senal y atenúa ruido bajo entre golpes, sin amplificar artificialmente capturas debiles.
+
 ## Como Leer El Resultado
 
 Salida correcta:

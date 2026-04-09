@@ -17,6 +17,7 @@ from validate_detection import (  # noqa: E402
     get_match_ambiguity,
     is_reliable_match,
     is_usable_capture,
+    limit_for,
     load_limits,
     load_references,
 )
@@ -66,6 +67,13 @@ def print_capture_result(capture_path: Path, references: list[dict], limits: dic
     print(f"Duracion: {features['durationSeconds']:.2f} s")
     if not candidate["is_full_capture"]:
         print(f"Tramo elegido: {candidate['durationSeconds']:.2f} s desde {candidate['startSeconds']:.2f} s")
+    preprocess = candidate.get("preprocess", {})
+    if preprocess.get("applied"):
+        print(
+            "Preprocesado: DC/gate suave "
+            f"(ruido {preprocess.get('noiseGateThreshold', 0):.4f}, "
+            f"RMS original {preprocess.get('sourceRms', 0):.4f})"
+        )
     print(f"RMS: {features['rms']:.4f}")
     print(f"Pico: {features['peakAmplitude']:.4f}")
     print(f"Golpes: {features['peaksCount']}")
@@ -107,7 +115,8 @@ def analyze_best_candidate(
     limits: dict,
     args: argparse.Namespace,
 ) -> dict:
-    windows = build_capture_windows(samples)
+    prepared_samples, preprocess_metrics = prepare_capture_samples(samples, limits, args.mode)
+    windows = build_capture_windows(prepared_samples)
     best_candidate = None
     fallback_candidate = None
 
@@ -124,6 +133,7 @@ def analyze_best_candidate(
             "features": features,
             "matches": matches,
             "reliable": reliable,
+            "preprocess": preprocess_metrics,
             "score": score,
         }
 
@@ -133,6 +143,57 @@ def analyze_best_candidate(
             best_candidate = candidate
 
     return best_candidate or fallback_candidate
+
+
+def prepare_capture_samples(samples: array, limits: dict, mode_key: str) -> tuple[array, dict]:
+    if not samples:
+        return samples, {"applied": False}
+
+    scale = 32768
+    source_values = [sample / scale for sample in samples]
+    source_rms = (sum(value * value for value in source_values) / len(source_values)) ** 0.5
+    source_peak = max(abs(value) for value in source_values)
+    dc_offset = sum(source_values) / len(source_values)
+    centered = [value - dc_offset for value in source_values]
+    centered_rms = (sum(value * value for value in centered) / len(centered)) ** 0.5
+    centered_peak = max(abs(value) for value in centered)
+
+    if (
+        centered_rms < limit_for(limits, "minSignalRms", mode_key) * 0.55
+        or centered_peak < limit_for(limits, "minSignalPeak", mode_key) * 0.55
+    ):
+        output = array("h", [int(max(-1, min(1, value)) * 32767) for value in centered])
+        return output, {
+            "applied": abs(dc_offset) > 0.0005,
+            "dcOffset": dc_offset,
+            "noiseGateThreshold": 0,
+            "sourceRms": source_rms,
+            "sourcePeak": source_peak,
+        }
+
+    step = max(1, len(centered) // 2400)
+    abs_samples = sorted(abs(value) for value in centered[::step])
+    noise_floor = abs_samples[int(len(abs_samples) * 0.35)] if abs_samples else 0
+    gate_threshold = max(noise_floor * 2.2, centered_rms * 0.055, 0.0015)
+    processed = []
+    for value in centered:
+        absolute = abs(value)
+        if absolute < gate_threshold:
+            processed.append(value * 0.22)
+        elif absolute < gate_threshold * 1.8:
+            mix = (absolute - gate_threshold) / gate_threshold
+            processed.append(value * max(0.22, min(0.72, 0.22 + mix * 0.5)))
+        else:
+            processed.append(value)
+
+    output = array("h", [int(max(-1, min(1, value)) * 32767) for value in processed])
+    return output, {
+        "applied": True,
+        "dcOffset": dc_offset,
+        "noiseGateThreshold": gate_threshold,
+        "sourceRms": source_rms,
+        "sourcePeak": source_peak,
+    }
 
 
 def is_better_candidate(candidate: dict, current: dict) -> bool:
