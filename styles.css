@@ -1775,8 +1775,8 @@ h3 {
 .bottom-nav__item--primary {
   position: relative;
   z-index: 1;
-  min-height: 72px;
-  transform: translateY(-16px);
+  min-height: 60px;
+  transform: none;
   background: linear-gradient(180deg, rgba(216, 170, 79, 0.2), rgba(122, 30, 42, 0.2));
   border-color: rgba(216, 170, 79, 0.32);
   box-shadow:

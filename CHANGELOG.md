@@ -3,6 +3,7 @@
 ## En desarrollo
 
 - Ajuste visual de la barra inferior del modo usuario en movil para evitar botones cortados o desalineados.
+- El boton Escuchar de la barra inferior queda alineado tambien al terminar la escucha.
 
 ## v1.1.0
 
