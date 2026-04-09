@@ -1,5 +1,9 @@
 # Changelog
 
+## En desarrollo
+
+- Ajuste visual de la barra inferior del modo usuario en movil para evitar botones cortados o desalineados.
+
 ## v1.1.0
 
 Version de cierre de la primera fase funcional.

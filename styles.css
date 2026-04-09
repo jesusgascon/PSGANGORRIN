@@ -2115,9 +2115,45 @@ code {
 }
 
 @media (max-width: 699px) {
+  .mode-user .app-shell,
   .mode-admin .app-shell {
     padding-inline: 8px;
     padding-bottom: calc(104px + var(--safe-bottom));
+  }
+
+  .bottom-nav {
+    left: 8px;
+    right: 8px;
+    bottom: calc(8px + var(--safe-bottom));
+    gap: 6px;
+    align-items: stretch;
+    padding: 8px;
+    border-radius: 20px;
+  }
+
+  .bottom-nav__item,
+  .bottom-nav__item--primary,
+  .bottom-nav--admin .bottom-nav__item--primary {
+    min-height: 58px;
+    padding: 7px 4px;
+    transform: none;
+    box-shadow: none;
+  }
+
+  .bottom-nav__item--primary {
+    background:
+      linear-gradient(145deg, rgba(216, 170, 79, 0.26), rgba(125, 26, 39, 0.22)),
+      rgba(15, 23, 31, 0.96);
+  }
+
+  .bottom-nav__icon {
+    width: 26px;
+    height: 26px;
+    padding: 6px;
+  }
+
+  .bottom-nav__item span:last-child {
+    font-size: 0.65rem;
   }
 
   .mode-admin .layout {
