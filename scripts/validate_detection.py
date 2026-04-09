@@ -82,6 +82,20 @@ DEFAULT_LIMITS = {
     "minTopMatchMargin": 5,
 }
 
+MODE_LIMIT_OVERRIDES = {
+    "field": {
+        "minMatchConfidence": 40,
+        "minSignalQuality": 0.35,
+        "minCaptureFingerprints": 8,
+        "minMatchAbsoluteSimilarity": 0.42,
+        "minMatchEvidence": 0.58,
+        "minFingerprintVotes": 6,
+        "minFingerprintSimilarity": 0.12,
+        "minRhythmSimilarity": 0.45,
+        "minTopMatchMargin": 10,
+    },
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -109,7 +123,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--max-attempts", type=int, default=30, help="Intentos por ensayo usable.")
     parser.add_argument("--mode", choices=sorted(MODE_PRESETS), default="fast")
-    parser.add_argument("--minimum-confidence", type=float, default=62)
+    parser.add_argument("--minimum-confidence", type=float, default=45)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--all", action="store_true", help="Valida todas las referencias.")
     parser.add_argument("--file", help="Valida solo el archivo indicado.")
@@ -231,6 +245,10 @@ def load_limits(project_root: Path) -> dict:
     return limits
 
 
+def limit_for(limits: dict, key: str, mode_key: str = "fast") -> float:
+    return MODE_LIMIT_OVERRIDES.get(mode_key, {}).get(key, limits[key])
+
+
 def select_references(references: list[dict], args: argparse.Namespace) -> list[dict]:
     if args.file:
         selected = [reference for reference in references if reference.get("file") == args.file]
@@ -302,7 +320,7 @@ def validate_reference(
             random_segment=args.random_segments or args.runs > 1,
             active_segment=args.active_segments,
         )
-        usable, reason = is_usable_capture(capture, limits)
+        usable, reason = is_usable_capture(capture, limits, args.mode)
         if usable or not args.require_usable:
             break
 
@@ -310,8 +328,8 @@ def validate_reference(
         raise RuntimeError("No se pudo construir la captura simulada")
     matches = compare_against_references(capture, all_references, limits, args.mode) if usable else []
     best = matches[0] if matches else None
-    ambiguity = get_match_ambiguity(matches, limits, args.minimum_confidence)
-    reliable = bool(best and is_reliable_match(best, limits, args.minimum_confidence))
+    ambiguity = get_match_ambiguity(matches, limits, args.minimum_confidence, args.mode)
+    reliable = bool(best and is_reliable_match(best, limits, args.minimum_confidence, args.mode))
     expected_file = reference.get("file")
     outcome = classify_outcome(best, matches, ambiguity, reliable, expected_file, usable)
 
@@ -482,16 +500,16 @@ def active_segment_starts(onset: list[float], window_length: int) -> list[int]:
     ]
 
 
-def is_usable_capture(features: dict, limits: dict) -> tuple[bool, str]:
+def is_usable_capture(features: dict, limits: dict, mode_key: str = "fast") -> tuple[bool, str]:
     checks = [
-        ("rms", features["rms"], limits["minSignalRms"]),
-        ("peakAmplitude", features["peakAmplitude"], limits["minSignalPeak"]),
-        ("peaksCount", features["peaksCount"], limits["minCapturePeaks"]),
-        ("peakRate", features["peakRate"], limits["minPeakRate"]),
-        ("fingerprintsCount", features["fingerprintsCount"], limits["minCaptureFingerprints"]),
-        ("signalQuality", features["signalQuality"], limits["minSignalQuality"]),
-        ("onsetContrast", features["onsetContrast"], limits["minOnsetContrast"]),
-        ("rhythmicStability", features["rhythmicStability"], limits["minRhythmicStability"]),
+        ("rms", features["rms"], limit_for(limits, "minSignalRms", mode_key)),
+        ("peakAmplitude", features["peakAmplitude"], limit_for(limits, "minSignalPeak", mode_key)),
+        ("peaksCount", features["peaksCount"], limit_for(limits, "minCapturePeaks", mode_key)),
+        ("peakRate", features["peakRate"], limit_for(limits, "minPeakRate", mode_key)),
+        ("fingerprintsCount", features["fingerprintsCount"], limit_for(limits, "minCaptureFingerprints", mode_key)),
+        ("signalQuality", features["signalQuality"], limit_for(limits, "minSignalQuality", mode_key)),
+        ("onsetContrast", features["onsetContrast"], limit_for(limits, "minOnsetContrast", mode_key)),
+        ("rhythmicStability", features["rhythmicStability"], limit_for(limits, "minRhythmicStability", mode_key)),
     ]
     for name, value, minimum in checks:
         if value < minimum:
@@ -559,6 +577,7 @@ def compare_against_references(
             fingerprint_match,
             absolute_similarity,
             limits,
+            mode_key,
         )
         signal_adjusted_similarity = absolute_similarity * clamp(input_features["signalQuality"], 0, 1) * evidence_score
         scored.append(
@@ -583,15 +602,16 @@ def compare_against_references(
     second = scored[1]["distance"] if len(scored) > 1 else best + 0.1
 
     matches = []
-    for index, item in enumerate(scored[:MATCHES_LIMIT]):
+    for index, item in enumerate(scored):
         separation_boost = (
             max(0, min(8, (second - best) * 36))
-            if index == 0 and item["evidenceScore"] >= limits["minMatchEvidence"]
+            if index == 0 and item["evidenceScore"] >= limit_for(limits, "minMatchEvidence", mode_key)
             else 0
         )
         item["confidence"] = round(clamp(item["signalAdjustedSimilarity"] * 100 + separation_boost, 0, 98))
         matches.append(item)
-    return matches
+    matches.sort(key=lambda item: (-item["confidence"], item["distance"]))
+    return matches[:MATCHES_LIMIT]
 
 
 def estimate_match_evidence(
@@ -600,9 +620,11 @@ def estimate_match_evidence(
     fingerprint_match: dict,
     absolute_similarity: float,
     limits: dict,
+    mode_key: str,
 ) -> float:
     vote_score = clamp(
-        fingerprint_match["votes"] / max(limits["minFingerprintVotes"], input_features["fingerprintsCount"] * 0.28),
+        fingerprint_match["votes"]
+        / max(limit_for(limits, "minFingerprintVotes", mode_key), input_features["fingerprintsCount"] * 0.28),
         0,
         1,
     )
@@ -620,31 +642,44 @@ def estimate_match_evidence(
     )
 
 
-def is_reliable_match(match: dict, limits: dict, minimum_confidence: float) -> bool:
+def is_reliable_match(match: dict, limits: dict, minimum_confidence: float, mode_key: str) -> bool:
     return (
-        match["confidence"] >= max(limits["minMatchConfidence"], minimum_confidence)
-        and match["absoluteSimilarity"] >= limits["minMatchAbsoluteSimilarity"]
-        and match["evidenceScore"] >= limits["minMatchEvidence"]
-        and match["alignment"]["fingerprintVotes"] >= limits["minFingerprintVotes"]
+        match["confidence"] >= max(limit_for(limits, "minMatchConfidence", mode_key), minimum_confidence)
+        and match["absoluteSimilarity"] >= limit_for(limits, "minMatchAbsoluteSimilarity", mode_key)
+        and match["evidenceScore"] >= limit_for(limits, "minMatchEvidence", mode_key)
+        and match["alignment"]["fingerprintVotes"] >= limit_for(limits, "minFingerprintVotes", mode_key)
         and (
-            match["alignment"]["fingerprintSimilarity"] >= limits["minFingerprintSimilarity"]
-            or match["alignment"]["similarity"] >= limits["minRhythmSimilarity"]
+            match["alignment"]["fingerprintSimilarity"] >= limit_for(limits, "minFingerprintSimilarity", mode_key)
+            or match["alignment"]["similarity"] >= limit_for(limits, "minRhythmSimilarity", mode_key)
         )
     )
 
 
-def get_match_ambiguity(matches: list[dict], limits: dict, minimum_confidence: float) -> dict | None:
+def get_match_ambiguity(
+    matches: list[dict],
+    limits: dict,
+    minimum_confidence: float,
+    mode_key: str,
+) -> dict | None:
     if len(matches) < 2:
         return None
 
-    best, second = matches[0], matches[1]
-    margin = best["confidence"] - second["confidence"]
-    second_is_plausible = (
-        second["confidence"] >= max(limits["minMatchConfidence"], minimum_confidence - 8)
-        and second["evidenceScore"] >= limits["minMatchEvidence"]
-        and second["alignment"]["fingerprintVotes"] >= limits["minFingerprintVotes"]
+    best = matches[0]
+    minimum_plausible_confidence = max(
+        limit_for(limits, "minMatchConfidence", mode_key) - 8,
+        minimum_confidence - 8,
     )
-    return second if margin < limits["minTopMatchMargin"] and second_is_plausible else None
+    for candidate in matches[1:]:
+        margin = best["confidence"] - candidate["confidence"]
+        candidate_is_plausible = (
+            candidate["confidence"] >= minimum_plausible_confidence
+            and candidate["evidenceScore"] >= limit_for(limits, "minMatchEvidence", mode_key)
+            and candidate["alignment"]["fingerprintVotes"]
+            >= max(2, limit_for(limits, "minFingerprintVotes", mode_key) - 2)
+        )
+        if margin < limit_for(limits, "minTopMatchMargin", mode_key) and candidate_is_plausible:
+            return candidate
+    return None
 
 
 def compare_rhythm_fingerprints(query_fingerprints: list[dict], target_fingerprints: list[dict]) -> dict:

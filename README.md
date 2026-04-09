@@ -237,7 +237,9 @@ Resultados esperados:
 - Toques muy parecidos: resultado ambiguo; la app pide repetir en vez de confirmar uno al azar.
 - Toque real con mucho ruido: mejor no detectar antes que inventar una coincidencia.
 
-Para pruebas reproduciendo un MP3 en el ordenador y escuchando con el microfono, usa el perfil `Micro real`, una duracion de 8 a 12 segundos, volumen medio-alto y evita que el microfono este pegado al altavoz. Esa prueba es mas dificil que analizar el MP3 limpio porque hay eco, compresion, ruido de sala y perdida de golpes.
+Para pruebas reproduciendo un MP3 en el ordenador y escuchando con el microfono, usa el perfil `Micro real`, una duracion de 10 a 12 segundos, volumen medio y evita que el microfono este pegado al altavoz. Esa prueba es mas dificil que analizar el MP3 limpio porque hay eco, compresion, ruido de sala y perdida de golpes.
+
+Si la app marca resultado ambiguo o sin deteccion fiable, no significa necesariamente que falle la biblioteca. Normalmente indica que la captura por microfono no llega clara, llega saturada o hay varios toques con patron muy parecido. En ese caso conviene repetir acercando el movil al altavoz/tambor, pero manteniendo distancia suficiente para que no sature.
 
 Mas detalle en:
 
@@ -339,7 +341,7 @@ python3 scripts/validate_detection.py --runs 400 --min-seconds 4 --max-seconds 1
 
 Esta prueba no usa el microfono. Toma un fragmento simulado de cada MP3, lo compara contra la biblioteca y comprueba que la mejor coincidencia sea el mismo archivo.
 
-El validador distingue entre detecciones confirmadas, resultados ambiguos, resultados por debajo del umbral y confusiones reales. Un resultado ambiguo no se considera una deteccion segura: la app pide repetir la escucha.
+El validador distingue entre detecciones confirmadas, resultados ambiguos, resultados por debajo del umbral y confusiones reales. Un resultado ambiguo no se considera una deteccion segura: la app pide repetir la escucha. El ranking se ordena por la confianza final calculada, no solo por cercania bruta, para evitar que un candidato tecnicamente cercano pero menos fiable aparezca como principal.
 
 Comprobacion rapida de CSS:
 

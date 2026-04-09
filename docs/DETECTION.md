@@ -18,15 +18,17 @@ La implementacion de CofraBeat es mas ligera y corre en navegador, pero mantiene
 
 El perfil `Micro real` esta pensado para pruebas en las que el audio sale por un altavoz y vuelve a entrar por el microfono del movil u ordenador.
 
-Esa cadena no conserva el MP3 limpio: cambia el volumen, mete eco, comprime frecuencias y puede borrar golpes. Por eso el perfil reduce el peso de fingerprints exactos y da mas peso al contorno ritmico y la envolvente.
+Esa cadena no conserva el MP3 limpio: cambia el volumen, mete eco, comprime frecuencias y puede borrar golpes. Por eso el perfil reduce el peso de fingerprints exactos, da mas peso al contorno ritmico y la envolvente, y exige mas evidencia antes de confirmar un toque.
 
 Recomendacion practica:
 
-- usar 8 a 12 segundos de escucha
-- subir el volumen sin saturar
-- separar un poco el microfono del altavoz
+- usar 10 a 12 segundos de escucha
+- usar volumen medio, sin saturar la entrada
+- separar el microfono del altavoz, normalmente 30-80 cm
 - evitar ruido de sala
 - repetir si la app marca resultado ambiguo
+
+El modo `Micro real` baja el umbral visible para permitir capturas de altavoz, pero compensa con reglas mas estrictas de evidencia, votos ritmicos y separacion entre candidatos. Si dos referencias quedan muy cerca, la app muestra resultado ambiguo.
 
 ## Fase 1: Extraccion De Senal
 

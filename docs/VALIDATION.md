@@ -143,12 +143,12 @@ Este resultado es preferible a confirmar siempre: cuando dos toques quedan demas
 Ensayo del perfil `Micro real`:
 
 ```text
-Referencias validadas: 400
-Confirmadas correctas: 379
-Ambiguas no confirmadas: 13
-Correctas por debajo del umbral: 8
+Referencias validadas: 120
+Confirmadas correctas: 110
+Ambiguas no confirmadas: 10
+Correctas por debajo del umbral: 0
 Confusiones reales: 0
 Capturas no usables: 0
 ```
 
-El perfil confirma menos casos que el modo rapido, pero mantiene cero confusiones reales en este ensayo y es mas razonable para audio captado por microfono.
+El perfil confirma menos casos que el modo rapido, pero mantiene cero confusiones reales en este ensayo y es mas razonable para audio captado por microfono. Las capturas dudosas se clasifican como ambiguas para que la app pida repetir en vez de inventar una coincidencia segura.

@@ -7,6 +7,7 @@
 - Cache publica actualizada para que GitHub Pages entregue estilos nuevos tambien bajo la ruta `/PSGANGORRIN/`.
 - Deteccion mas prudente: si dos toques quedan demasiado cerca, se muestra resultado ambiguo en vez de confirmar uno.
 - Perfil `Micro real` para pruebas con altavoz y microfono, escucha por defecto de 8 segundos y titulo principal mas compacto en movil.
+- Perfil `Micro real` reforzado: escucha por defecto de 10 segundos, umbral visible mas realista, ranking ordenado por confianza final y avisos de senal baja, saturacion o captura ambigua.
 
 ## v1.1.0
 

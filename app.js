@@ -20,6 +20,19 @@ const DEFAULT_DETECTION_LIMITS = Object.freeze({
   minRhythmSimilarity: 0.36,
   minTopMatchMargin: 5,
 });
+const MODE_LIMIT_OVERRIDES = Object.freeze({
+  field: {
+    minMatchConfidence: 40,
+    minSignalQuality: 0.35,
+    minCaptureFingerprints: 8,
+    minMatchAbsoluteSimilarity: 0.42,
+    minMatchEvidence: 0.58,
+    minFingerprintVotes: 6,
+    minFingerprintSimilarity: 0.12,
+    minRhythmSimilarity: 0.45,
+    minTopMatchMargin: 10,
+  },
+});
 const SUBSEQUENCE_STRIDE_DIVISOR = 18;
 const FINGERPRINT_MAX_NEIGHBORS = 5;
 const FINGERPRINT_MAX_INTERVAL_SECONDS = 3.2;
@@ -41,7 +54,7 @@ const STORAGE_KEYS = {
   mode: "cofrabeat:mode",
   settingsVersion: "cofrabeat:settings-version",
 };
-const SETTINGS_SCHEMA_VERSION = 3;
+const SETTINGS_SCHEMA_VERSION = 4;
 const DB_NAME = "cofrabeat-library";
 const DB_VERSION = 2;
 const DB_STORE_REFERENCES = "references";
@@ -84,8 +97,8 @@ const state = {
   history: [],
   lastResult: null,
   settings: {
-    captureSeconds: 8,
-    minimumConfidence: 62,
+    captureSeconds: 10,
+    minimumConfidence: 45,
     analysisMode: "field",
   },
   uiMode: "user",
@@ -388,9 +401,14 @@ function loadSavedState() {
     if (rawSettings) {
       state.settings = { ...state.settings, ...JSON.parse(rawSettings) };
     }
-    if (savedSettingsVersion < SETTINGS_SCHEMA_VERSION && state.settings.analysisMode === "fast") {
+    if (savedSettingsVersion < 3 && state.settings.analysisMode === "fast") {
       state.settings.analysisMode = "field";
       state.settings.captureSeconds = Math.max(state.settings.captureSeconds, 8);
+      persistSettings();
+    }
+    if (savedSettingsVersion < 4 && state.settings.analysisMode === "field") {
+      state.settings.captureSeconds = Math.max(state.settings.captureSeconds, 10);
+      state.settings.minimumConfidence = Math.min(state.settings.minimumConfidence, 45);
       persistSettings();
     }
     localStorage.setItem(STORAGE_KEYS.settingsVersion, String(SETTINGS_SCHEMA_VERSION));
@@ -724,8 +742,9 @@ function sanitizeDetectionLimits(limits) {
   );
 }
 
-function detectionLimit(key) {
-  return state.detectionLimits?.[key] ?? DEFAULT_DETECTION_LIMITS[key];
+function detectionLimit(key, modeKey = state.settings.analysisMode) {
+  const baseValue = state.detectionLimits?.[key] ?? DEFAULT_DETECTION_LIMITS[key];
+  return MODE_LIMIT_OVERRIDES[modeKey]?.[key] ?? baseValue;
 }
 
 function getReferenceInitials(reference) {
@@ -1302,6 +1321,27 @@ async function stopListening({ manual = false } = {}) {
   });
   showResultSection();
 
+  const inputSignal = flattenChunks(state.recordingChunks);
+  releaseMicrophoneCapture();
+  cleanupListeningNodes();
+
+  try {
+    processCapturedSignal(inputSignal, capturedSeconds);
+  } catch (error) {
+    console.error("No se pudo procesar la captura", error);
+    updateResult({
+      name: "Error al analizar",
+      meta: "La escucha se ha cerrado correctamente, pero el audio captado no se pudo analizar. Vuelve a intentarlo.",
+      confidence: 0,
+      matches: [],
+      analysis: null,
+    });
+    updateStatus("idle", "Error de análisis");
+    resetIdleUi();
+  }
+}
+
+function releaseMicrophoneCapture() {
   if (state.processor?.port) {
     state.processor.port.onmessage = null;
   }
@@ -1309,10 +1349,9 @@ async function stopListening({ manual = false } = {}) {
   state.analyser?.disconnect();
   state.mediaSource?.disconnect();
   state.mediaStream?.getTracks().forEach((track) => track.stop());
+}
 
-  const inputSignal = flattenChunks(state.recordingChunks);
-  cleanupListeningNodes();
-
+function processCapturedSignal(inputSignal, capturedSeconds) {
   if (inputSignal.length < ANALYSIS_WINDOW) {
     updateResult({
       name: "Audio insuficiente",
@@ -1329,7 +1368,7 @@ async function stopListening({ manual = false } = {}) {
   if (!isUsableCapture(features)) {
     updateResult({
       name: "Sin toque detectable",
-      meta: `La captura no tiene un patrón de tambor suficientemente claro. Nivel: ${Math.round(features.rms * 1000)} rms, golpes: ${features.peaksCount}, calidad: ${Math.round(features.signalQuality * 100)}%. Prueba con más volumen, menos ruido o acercando el micrófono.`,
+      meta: buildCaptureAdvice(features),
       confidence: 0,
       matches: [],
       analysis: features,
@@ -1358,8 +1397,8 @@ async function stopListening({ manual = false } = {}) {
   const ambiguity = getMatchAmbiguity(results);
   if (!isReliableMatch(bestMatch, state.settings) || ambiguity) {
     const ambiguityMeta = ambiguity
-      ? `Resultado parecido entre "${bestMatch.reference.name}" y "${ambiguity.reference.name}". ${formatCaptureDiagnostics(features)} Repite la escucha con el tambor más claro para confirmar.`
-      : `Resultado no concluyente tras ${capturedSeconds.toFixed(1)} s de escucha. ${formatCaptureDiagnostics(features)} Prueba con más volumen, menos ruido o acercando el micrófono.`;
+      ? `Resultado parecido entre "${bestMatch.reference.name}" y "${ambiguity.reference.name}". ${formatCaptureDiagnostics(features)} Repite la escucha más cerca del altavoz o del tambor para confirmar.`
+      : `Resultado no concluyente tras ${capturedSeconds.toFixed(1)} s de escucha. ${buildCaptureAdvice(features)}`;
     updateResult({
       name: ambiguity ? "Resultado ambiguo" : "Sin detección fiable",
       meta: ambiguityMeta,
@@ -2091,6 +2130,7 @@ function compareAgainstReferences(inputFeatures, references, modeKey) {
       rhythmMatch,
       fingerprintMatch,
       absoluteSimilarity,
+      modeKey,
     );
     const signalAdjustedSimilarity =
       absoluteSimilarity * clamp(inputFeatures.signalQuality, 0, 1) * evidenceScore;
@@ -2115,8 +2155,8 @@ function compareAgainstReferences(inputFeatures, references, modeKey) {
   const best = scored[0]?.distance ?? 1;
   const second = scored[1]?.distance ?? best + 0.1;
 
-  return scored.slice(0, MATCHES_LIMIT).map((item, index) => {
-    const separationBoost = index === 0 && item.evidenceScore >= detectionLimit("minMatchEvidence")
+  const matches = scored.map((item, index) => {
+    const separationBoost = index === 0 && item.evidenceScore >= detectionLimit("minMatchEvidence", modeKey)
       ? Math.max(0, Math.min(8, (second - best) * 36))
       : 0;
     const confidence = Math.round(clamp(item.signalAdjustedSimilarity * 100 + separationBoost, 0, 98));
@@ -2126,11 +2166,13 @@ function compareAgainstReferences(inputFeatures, references, modeKey) {
       confidence,
     };
   });
+  matches.sort((left, right) => right.confidence - left.confidence || left.distance - right.distance);
+  return matches.slice(0, MATCHES_LIMIT);
 }
 
-function estimateMatchEvidence(inputFeatures, rhythmMatch, fingerprintMatch, absoluteSimilarity) {
+function estimateMatchEvidence(inputFeatures, rhythmMatch, fingerprintMatch, absoluteSimilarity, modeKey) {
   const voteScore = clamp(
-    fingerprintMatch.votes / Math.max(detectionLimit("minFingerprintVotes"), inputFeatures.fingerprintsCount * 0.28),
+    fingerprintMatch.votes / Math.max(detectionLimit("minFingerprintVotes", modeKey), inputFeatures.fingerprintsCount * 0.28),
     0,
     1,
   );
@@ -2150,33 +2192,41 @@ function estimateMatchEvidence(inputFeatures, rhythmMatch, fingerprintMatch, abs
 }
 
 function isReliableMatch(match, settings) {
+  const modeKey = settings.analysisMode;
   return (
-    match.confidence >= Math.max(detectionLimit("minMatchConfidence"), settings.minimumConfidence) &&
-    match.absoluteSimilarity >= detectionLimit("minMatchAbsoluteSimilarity") &&
-    match.evidenceScore >= detectionLimit("minMatchEvidence") &&
-    match.alignment.fingerprintVotes >= detectionLimit("minFingerprintVotes") &&
+    match.confidence >= Math.max(detectionLimit("minMatchConfidence", modeKey), settings.minimumConfidence) &&
+    match.absoluteSimilarity >= detectionLimit("minMatchAbsoluteSimilarity", modeKey) &&
+    match.evidenceScore >= detectionLimit("minMatchEvidence", modeKey) &&
+    match.alignment.fingerprintVotes >= detectionLimit("minFingerprintVotes", modeKey) &&
     (
-      match.alignment.fingerprintSimilarity >= detectionLimit("minFingerprintSimilarity") ||
-      match.alignment.similarity >= detectionLimit("minRhythmSimilarity")
+      match.alignment.fingerprintSimilarity >= detectionLimit("minFingerprintSimilarity", modeKey) ||
+      match.alignment.similarity >= detectionLimit("minRhythmSimilarity", modeKey)
     )
   );
 }
 
 function getMatchAmbiguity(matches) {
   const best = matches[0];
-  const second = matches[1];
-  if (!best || !second) {
+  if (!best || matches.length < 2) {
     return null;
   }
 
-  const margin = best.confidence - second.confidence;
-  const minimumMargin = detectionLimit("minTopMatchMargin");
-  const secondIsPlausible =
-    second.confidence >= Math.max(detectionLimit("minMatchConfidence"), state.settings.minimumConfidence - 8) &&
-    second.evidenceScore >= detectionLimit("minMatchEvidence") &&
-    second.alignment.fingerprintVotes >= detectionLimit("minFingerprintVotes");
+  const modeKey = state.settings.analysisMode;
+  const minimumMargin = detectionLimit("minTopMatchMargin", modeKey);
+  const minimumPlausibleConfidence = Math.max(
+    detectionLimit("minMatchConfidence", modeKey) - 8,
+    state.settings.minimumConfidence - 8,
+  );
 
-  return margin < minimumMargin && secondIsPlausible ? second : null;
+  return matches.slice(1).find((candidate) => {
+    const margin = best.confidence - candidate.confidence;
+    const candidateIsPlausible =
+      candidate.confidence >= minimumPlausibleConfidence &&
+      candidate.evidenceScore >= detectionLimit("minMatchEvidence", modeKey) &&
+      candidate.alignment.fingerprintVotes >= Math.max(2, detectionLimit("minFingerprintVotes", modeKey) - 2);
+
+    return margin < minimumMargin && candidateIsPlausible;
+  }) || null;
 }
 
 function clamp(value, min, max) {
@@ -2820,6 +2870,36 @@ function formatCaptureDiagnostics(analysis) {
   }
 
   return `Captado: ${Math.round(analysis.tempoEstimate || 0)} bpm, ${analysis.peaksCount || 0} golpes, calidad ${Math.round((analysis.signalQuality || 0) * 100)}%.`;
+}
+
+function buildCaptureAdvice(analysis) {
+  if (!analysis) {
+    return "No se pudo medir la calidad de la grabación. Vuelve a intentarlo acercando el móvil al sonido.";
+  }
+
+  const diagnostics = formatCaptureDiagnostics(analysis);
+  const details = [];
+  if (analysis.peakAmplitude >= 0.98) {
+    details.push("la entrada está saturada; baja el volumen del altavoz o la ganancia del micrófono");
+  }
+  if (analysis.rms < detectionLimit("minSignalRms")) {
+    details.push("la señal llega baja; sube un poco el volumen o acerca el móvil");
+  }
+  if (analysis.peaksCount < detectionLimit("minCapturePeaks")) {
+    details.push("se han detectado pocos golpes; deja sonar el toque completo unos segundos más");
+  }
+  if (analysis.fingerprintsCount < detectionLimit("minCaptureFingerprints")) {
+    details.push("hay poco patrón rítmico útil; evita ruido de fondo y eco");
+  }
+  if (analysis.signalQuality < detectionLimit("minSignalQuality")) {
+    details.push("la calidad rítmica es baja; coloca el móvil frente al altavoz, no pegado");
+  }
+
+  const advice = details.length
+    ? details.join(". ")
+    : "la captura no se parece lo suficiente a una referencia; prueba con menos ruido y 30-80 cm de distancia al altavoz";
+
+  return `${diagnostics} ${advice}.`;
 }
 
 function pushHistory(bestMatch, analysis, uncertain) {
