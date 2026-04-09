@@ -49,10 +49,10 @@
         <section id="detectSection" class="hero-card glass user-mode-section">
           <div class="hero-copy">
             <p class="eyebrow">Semana Santa · Tambor</p>
-            <h2>Reconocimiento de toques estilo Shazam</h2>
+            <h2>Detector de toques</h2>
             <p class="hero-text">
-              Pulsa el tambor central, deja que la app escuche y compara el toque
-              con tu base de audios.
+              Pulsa el tambor central y compara el toque con tu base de audios,
+              al estilo Shazam.
             </p>
 
             <div class="hero-stats">
@@ -190,12 +190,12 @@
                 id="captureDuration"
                 type="range"
                 min="3"
-                max="10"
+                max="12"
                 step="1"
-                value="6"
+                value="8"
                 aria-describedby="captureDurationValue"
               />
-              <strong id="captureDurationValue">6 s</strong>
+              <strong id="captureDurationValue">8 s</strong>
             </div>
           </div>
 
@@ -218,6 +218,7 @@
           <div class="control-group">
             <label for="analysisMode">Perfil de detección</label>
             <select id="analysisMode" class="mobile-select">
+              <option value="field">Micro real</option>
               <option value="fast">Escucha rápida</option>
               <option value="balanced">Equilibrado</option>
               <option value="strict">Más estricto</option>

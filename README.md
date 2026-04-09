@@ -237,6 +237,8 @@ Resultados esperados:
 - Toques muy parecidos: resultado ambiguo; la app pide repetir en vez de confirmar uno al azar.
 - Toque real con mucho ruido: mejor no detectar antes que inventar una coincidencia.
 
+Para pruebas reproduciendo un MP3 en el ordenador y escuchando con el microfono, usa el perfil `Micro real`, una duracion de 8 a 12 segundos, volumen medio-alto y evita que el microfono este pegado al altavoz. Esa prueba es mas dificil que analizar el MP3 limpio porque hay eco, compresion, ruido de sala y perdida de golpes.
+
 Mas detalle en:
 
 ```text
@@ -327,6 +329,12 @@ Hacer 5 ensayos aleatorios con fragmentos de 4 a 8 segundos:
 
 ```bash
 python3 scripts/validate_detection.py --runs 5 --min-seconds 4 --max-seconds 8 --active-segments --require-usable
+```
+
+Validar el perfil recomendado para micro real:
+
+```bash
+python3 scripts/validate_detection.py --runs 400 --min-seconds 4 --max-seconds 12 --active-segments --require-usable --skip-regenerate --mode field
 ```
 
 Esta prueba no usa el microfono. Toma un fragmento simulado de cada MP3, lo compara contra la biblioteca y comprueba que la mejor coincidencia sea el mismo archivo.

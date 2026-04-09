@@ -447,9 +447,9 @@ h1 {
 }
 
 h2 {
-  font-size: 1.9rem;
+  font-size: clamp(1.58rem, 7vw, 1.9rem);
   line-height: 1.05;
-  max-width: 12ch;
+  max-width: 16ch;
 }
 
 h3 {

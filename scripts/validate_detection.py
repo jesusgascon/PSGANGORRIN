@@ -34,6 +34,15 @@ MODE_PRESETS = {
         "tempo": 0.06,
         "peaks": 0.04,
     },
+    "field": {
+        "fingerprint": 0.26,
+        "rhythm": 0.3,
+        "envelope": 0.12,
+        "interval": 0.18,
+        "density": 0.06,
+        "tempo": 0.06,
+        "peaks": 0.02,
+    },
     "balanced": {
         "fingerprint": 0.36,
         "rhythm": 0.24,

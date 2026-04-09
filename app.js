@@ -39,7 +39,9 @@ const STORAGE_KEYS = {
   settings: "cofrabeat:settings",
   history: "cofrabeat:history",
   mode: "cofrabeat:mode",
+  settingsVersion: "cofrabeat:settings-version",
 };
+const SETTINGS_SCHEMA_VERSION = 3;
 const DB_NAME = "cofrabeat-library";
 const DB_VERSION = 2;
 const DB_STORE_REFERENCES = "references";
@@ -52,6 +54,10 @@ const MODE_PRESETS = {
   fast: {
     label: "Escucha rápida",
     weights: { fingerprint: 0.32, rhythm: 0.28, envelope: 0.08, interval: 0.16, density: 0.06, tempo: 0.06, peaks: 0.04 },
+  },
+  field: {
+    label: "Micro real",
+    weights: { fingerprint: 0.26, rhythm: 0.3, envelope: 0.12, interval: 0.18, density: 0.06, tempo: 0.06, peaks: 0.02 },
   },
   balanced: {
     label: "Equilibrado",
@@ -78,9 +84,9 @@ const state = {
   history: [],
   lastResult: null,
   settings: {
-    captureSeconds: 6,
+    captureSeconds: 8,
     minimumConfidence: 62,
-    analysisMode: "fast",
+    analysisMode: "field",
   },
   uiMode: "user",
   adminAuthenticated: false,
@@ -377,10 +383,17 @@ function bindEvents() {
 
 function loadSavedState() {
   try {
+    const savedSettingsVersion = Number(localStorage.getItem(STORAGE_KEYS.settingsVersion) || 0);
     const rawSettings = localStorage.getItem(STORAGE_KEYS.settings);
     if (rawSettings) {
       state.settings = { ...state.settings, ...JSON.parse(rawSettings) };
     }
+    if (savedSettingsVersion < SETTINGS_SCHEMA_VERSION && state.settings.analysisMode === "fast") {
+      state.settings.analysisMode = "field";
+      state.settings.captureSeconds = Math.max(state.settings.captureSeconds, 8);
+      persistSettings();
+    }
+    localStorage.setItem(STORAGE_KEYS.settingsVersion, String(SETTINGS_SCHEMA_VERSION));
 
     const rawHistory = localStorage.getItem(STORAGE_KEYS.history);
     if (rawHistory) {
@@ -1345,8 +1358,8 @@ async function stopListening({ manual = false } = {}) {
   const ambiguity = getMatchAmbiguity(results);
   if (!isReliableMatch(bestMatch, state.settings) || ambiguity) {
     const ambiguityMeta = ambiguity
-      ? `Resultado parecido entre "${bestMatch.reference.name}" y "${ambiguity.reference.name}". Repite la escucha con el tambor más claro para confirmar.`
-      : `Resultado no concluyente tras ${capturedSeconds.toFixed(1)} s de escucha. La señal no reúne evidencia suficiente para confirmar un toque. Prueba otra captura con más volumen, menos ruido o más cerca del tambor.`;
+      ? `Resultado parecido entre "${bestMatch.reference.name}" y "${ambiguity.reference.name}". ${formatCaptureDiagnostics(features)} Repite la escucha con el tambor más claro para confirmar.`
+      : `Resultado no concluyente tras ${capturedSeconds.toFixed(1)} s de escucha. ${formatCaptureDiagnostics(features)} Prueba con más volumen, menos ruido o acercando el micrófono.`;
     updateResult({
       name: ambiguity ? "Resultado ambiguo" : "Sin detección fiable",
       meta: ambiguityMeta,
@@ -2799,6 +2812,14 @@ function formatMatchMeta(match, analysis) {
     ? ` Fragmento parecido sobre ${formatDuration(offsetSeconds)} de la referencia.`
     : "";
   return `Coincidencia principal contra "${match.reference.name}" con patrón rítmico muy próximo. Captado: ${captured || 0} bpm. Referencia: ${tempo || 0} bpm.${fragmentText}`;
+}
+
+function formatCaptureDiagnostics(analysis) {
+  if (!analysis) {
+    return "";
+  }
+
+  return `Captado: ${Math.round(analysis.tempoEstimate || 0)} bpm, ${analysis.peaksCount || 0} golpes, calidad ${Math.round((analysis.signalQuality || 0) * 100)}%.`;
 }
 
 function pushHistory(bestMatch, analysis, uncertain) {

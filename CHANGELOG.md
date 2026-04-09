@@ -6,6 +6,7 @@
 - El boton Escuchar de la barra inferior queda alineado tambien al terminar la escucha.
 - Cache publica actualizada para que GitHub Pages entregue estilos nuevos tambien bajo la ruta `/PSGANGORRIN/`.
 - Deteccion mas prudente: si dos toques quedan demasiado cerca, se muestra resultado ambiguo en vez de confirmar uno.
+- Perfil `Micro real` para pruebas con altavoz y microfono, escucha por defecto de 8 segundos y titulo principal mas compacto en movil.
 
 ## v1.1.0
 

@@ -14,6 +14,20 @@ El enfoque toma ideas de sistemas de audio fingerprinting y deteccion de onsets:
 
 La implementacion de CofraBeat es mas ligera y corre en navegador, pero mantiene la idea clave: no basta con encontrar el candidato mas cercano; debe haber evidencia suficiente.
 
+## Perfil Micro Real
+
+El perfil `Micro real` esta pensado para pruebas en las que el audio sale por un altavoz y vuelve a entrar por el microfono del movil u ordenador.
+
+Esa cadena no conserva el MP3 limpio: cambia el volumen, mete eco, comprime frecuencias y puede borrar golpes. Por eso el perfil reduce el peso de fingerprints exactos y da mas peso al contorno ritmico y la envolvente.
+
+Recomendacion practica:
+
+- usar 8 a 12 segundos de escucha
+- subir el volumen sin saturar
+- separar un poco el microfono del altavoz
+- evitar ruido de sala
+- repetir si la app marca resultado ambiguo
+
 ## Fase 1: Extraccion De Senal
 
 `analyseSignal()` calcula:

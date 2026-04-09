@@ -40,6 +40,12 @@ Hacer 5 ensayos aleatorios con trozos de 4 a 8 segundos:
 python3 scripts/validate_detection.py --runs 5 --min-seconds 4 --max-seconds 8 --active-segments --require-usable
 ```
 
+Ensayar el perfil recomendado para micro real:
+
+```bash
+python3 scripts/validate_detection.py --runs 400 --min-seconds 4 --max-seconds 12 --active-segments --require-usable --skip-regenerate --mode field
+```
+
 Hacer una prueba cruda totalmente aleatoria, incluyendo posibles silencios o partes sin golpes:
 
 ```bash
@@ -133,3 +139,16 @@ Capturas no usables: 0
 ```
 
 Este resultado es preferible a confirmar siempre: cuando dos toques quedan demasiado cerca, la app muestra resultado ambiguo y pide repetir la escucha.
+
+Ensayo del perfil `Micro real`:
+
+```text
+Referencias validadas: 400
+Confirmadas correctas: 379
+Ambiguas no confirmadas: 13
+Correctas por debajo del umbral: 8
+Confusiones reales: 0
+Capturas no usables: 0
+```
+
+El perfil confirma menos casos que el modo rapido, pero mantiene cero confusiones reales en este ensayo y es mas razonable para audio captado por microfono.
