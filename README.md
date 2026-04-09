@@ -243,6 +243,8 @@ Para pruebas reproduciendo un MP3 en el ordenador y escuchando con el microfono,
 
 Si la app marca resultado ambiguo o sin deteccion fiable, no significa necesariamente que falle la biblioteca. Normalmente indica que la captura por microfono no llega clara, llega saturada o hay varios toques con patron muy parecido. En ese caso conviene repetir acercando el movil al altavoz/tambor, pero manteniendo distancia suficiente para que no sature.
 
+El perfil `Micro real` pesa menos los fingerprints exactos y da mas importancia al patron de golpes, envolvente e intervalos. Si un candidato gana solo por coincidencias locales pero el patron general no acompaña, se penaliza y la app tiende a dejarlo ambiguo.
+
 Mas detalle en:
 
 ```text
@@ -356,7 +358,7 @@ Este comando sirve para pruebas de campo. Si el audio se grabo por microfono rea
 
 La captura real se limpia de forma suave antes de analizarla: se centra la senal, se reduce ruido bajo entre golpes y se evita subir artificialmente volumen a ruido debil.
 
-La comparacion usa la huella completa de cada toque y sus segmentos fuertes. Si dos toques quedan dentro del margen de ambiguedad, la app no confirma ninguno y pide repetir.
+La comparacion usa la huella completa de cada toque y sus segmentos fuertes. Si dos toques quedan dentro del margen de ambiguedad, la app no confirma ninguno y pide repetir. El detalle del ranking muestra patron, ritmo, envolvente, intervalos, votos, penalizacion de micro y segmento usado.
 
 Comprobacion rapida de CSS:
 

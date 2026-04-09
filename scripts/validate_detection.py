@@ -35,11 +35,11 @@ MODE_PRESETS = {
         "peaks": 0.04,
     },
     "field": {
-        "fingerprint": 0.26,
-        "rhythm": 0.3,
-        "envelope": 0.12,
-        "interval": 0.18,
-        "density": 0.06,
+        "fingerprint": 0.16,
+        "rhythm": 0.34,
+        "envelope": 0.18,
+        "interval": 0.2,
+        "density": 0.04,
         "tempo": 0.06,
         "peaks": 0.02,
     },
@@ -375,8 +375,7 @@ def classify_outcome(
         return "wrong"
 
     best_file = best["reference"].get("file")
-    candidate_files = {match["reference"].get("file") for match in matches[:2]}
-    if ambiguity and expected_file in candidate_files:
+    if ambiguity:
         return "ambiguous"
     if reliable and best_file == expected_file:
         return "confirmed"
@@ -645,7 +644,27 @@ def score_reference_variant(
         limits,
         mode_key,
     )
-    signal_adjusted_similarity = absolute_similarity * clamp(input_features["signalQuality"], 0, 1) * evidence_score
+    diagnostics = build_match_diagnostics(
+        rhythm_match,
+        envelope_match,
+        fingerprint_match,
+        interval_distance,
+        density_distance,
+        tempo_distance,
+        peaks_distance,
+        mode_key,
+    )
+    adjusted_evidence = (
+        evidence_score * (1 - diagnostics["microphonePenalty"] * 0.45)
+        if mode_key == "field"
+        else evidence_score
+    )
+    signal_adjusted_similarity = (
+        absolute_similarity
+        * clamp(input_features["signalQuality"], 0, 1)
+        * adjusted_evidence
+        * (1 - diagnostics["microphonePenalty"])
+    )
     return {
         "reference": reference,
         "referenceFeatures": reference_features,
@@ -658,7 +677,9 @@ def score_reference_variant(
         "distance": distance,
         "absoluteSimilarity": absolute_similarity,
         "signalAdjustedSimilarity": signal_adjusted_similarity,
-        "evidenceScore": evidence_score,
+        "evidenceScore": adjusted_evidence,
+        "rawEvidenceScore": evidence_score,
+        "diagnostics": diagnostics,
         "alignment": {
             **rhythm_match,
             "fingerprintSimilarity": fingerprint_match["similarity"],
@@ -666,6 +687,54 @@ def score_reference_variant(
             "fingerprintVotes": fingerprint_match["votes"],
         },
         "confidence": 0,
+    }
+
+
+def build_match_diagnostics(
+    rhythm_match: dict,
+    envelope_match: dict,
+    fingerprint_match: dict,
+    interval_distance: float,
+    density_distance: float,
+    tempo_distance: float,
+    peaks_distance: float,
+    mode_key: str,
+) -> dict:
+    interval_similarity = clamp(1 - interval_distance, 0, 1)
+    density_similarity = clamp(1 - density_distance, 0, 1)
+    tempo_similarity = clamp(1 - tempo_distance, 0, 1)
+    peaks_similarity = clamp(1 - peaks_distance, 0, 1)
+    fingerprint_strength = clamp(fingerprint_match["similarity"] / 0.35, 0, 1)
+    pattern_score = clamp(
+        rhythm_match["similarity"] * 0.36
+        + envelope_match["similarity"] * 0.3
+        + interval_similarity * 0.22
+        + tempo_similarity * 0.07
+        + peaks_similarity * 0.05,
+        0,
+        1,
+    )
+    microphone_penalty = (
+        clamp(
+            max(0, 0.72 - pattern_score) * 0.45
+            + max(0, fingerprint_strength - pattern_score) * 0.18,
+            0,
+            0.28,
+        )
+        if mode_key == "field"
+        else 0
+    )
+    return {
+        "rhythmSimilarity": rhythm_match["similarity"],
+        "envelopeSimilarity": envelope_match["similarity"],
+        "fingerprintSimilarity": fingerprint_match["similarity"],
+        "fingerprintStrength": fingerprint_strength,
+        "intervalSimilarity": interval_similarity,
+        "densitySimilarity": density_similarity,
+        "tempoSimilarity": tempo_similarity,
+        "peaksSimilarity": peaks_similarity,
+        "patternScore": pattern_score,
+        "microphonePenalty": microphone_penalty,
     }
 
 

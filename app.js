@@ -75,7 +75,7 @@ const MODE_PRESETS = {
   },
   field: {
     label: "Micro real",
-    weights: { fingerprint: 0.26, rhythm: 0.3, envelope: 0.12, interval: 0.18, density: 0.06, tempo: 0.06, peaks: 0.02 },
+    weights: { fingerprint: 0.16, rhythm: 0.34, envelope: 0.18, interval: 0.2, density: 0.04, tempo: 0.06, peaks: 0.02 },
   },
   balanced: {
     label: "Equilibrado",
@@ -2579,8 +2579,21 @@ function scoreReferenceVariant(inputFeatures, reference, variant, preset, modeKe
     absoluteSimilarity,
     modeKey,
   );
+  const diagnostics = buildMatchDiagnostics(
+    rhythmMatch,
+    envelopeMatch,
+    fingerprintMatch,
+    intervalDistance,
+    densityDistance,
+    tempoDistance,
+    peaksDistance,
+    modeKey,
+  );
+  const adjustedEvidence = modeKey === "field"
+    ? evidenceScore * (1 - diagnostics.microphonePenalty * 0.45)
+    : evidenceScore;
   const signalAdjustedSimilarity =
-    absoluteSimilarity * clamp(inputFeatures.signalQuality, 0, 1) * evidenceScore;
+    absoluteSimilarity * clamp(inputFeatures.signalQuality, 0, 1) * adjustedEvidence * (1 - diagnostics.microphonePenalty);
 
   return {
     reference,
@@ -2594,7 +2607,9 @@ function scoreReferenceVariant(inputFeatures, reference, variant, preset, modeKe
     distance,
     absoluteSimilarity,
     signalAdjustedSimilarity,
-    evidenceScore,
+    evidenceScore: adjustedEvidence,
+    rawEvidenceScore: evidenceScore,
+    diagnostics,
     alignment: {
       ...rhythmMatch,
       fingerprintSimilarity: fingerprintMatch.similarity,
@@ -2602,6 +2617,53 @@ function scoreReferenceVariant(inputFeatures, reference, variant, preset, modeKe
       fingerprintVotes: fingerprintMatch.votes,
     },
     confidence: 0,
+  };
+}
+
+function buildMatchDiagnostics(
+  rhythmMatch,
+  envelopeMatch,
+  fingerprintMatch,
+  intervalDistance,
+  densityDistance,
+  tempoDistance,
+  peaksDistance,
+  modeKey,
+) {
+  const intervalSimilarity = clamp(1 - intervalDistance, 0, 1);
+  const densitySimilarity = clamp(1 - densityDistance, 0, 1);
+  const tempoSimilarity = clamp(1 - tempoDistance, 0, 1);
+  const peaksSimilarity = clamp(1 - peaksDistance, 0, 1);
+  const fingerprintStrength = clamp(fingerprintMatch.similarity / 0.35, 0, 1);
+  const patternScore = clamp(
+    rhythmMatch.similarity * 0.36 +
+    envelopeMatch.similarity * 0.3 +
+    intervalSimilarity * 0.22 +
+    tempoSimilarity * 0.07 +
+    peaksSimilarity * 0.05,
+    0,
+    1,
+  );
+  const microphonePenalty = modeKey === "field"
+    ? clamp(
+      Math.max(0, 0.72 - patternScore) * 0.45 +
+      Math.max(0, fingerprintStrength - patternScore) * 0.18,
+      0,
+      0.28,
+    )
+    : 0;
+
+  return {
+    rhythmSimilarity: rhythmMatch.similarity,
+    envelopeSimilarity: envelopeMatch.similarity,
+    fingerprintSimilarity: fingerprintMatch.similarity,
+    fingerprintStrength,
+    intervalSimilarity,
+    densitySimilarity,
+    tempoSimilarity,
+    peaksSimilarity,
+    patternScore,
+    microphonePenalty,
   };
 }
 

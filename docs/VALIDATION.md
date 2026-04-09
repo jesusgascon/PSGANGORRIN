@@ -66,6 +66,8 @@ Este comando usa la misma logica de tramos activos que la app web y muestra si l
 
 El analisis de capturas reales tambien aplica la misma limpieza suave que la app: centra la senal y atenúa ruido bajo entre golpes, sin amplificar artificialmente capturas debiles.
 
+En modo `field`, el ranking incluye detalle de patron, ritmo, envolvente, intervalos, penalizacion de micro y si la coincidencia viene de la referencia completa o de un segmento fuerte.
+
 ## Como Leer El Resultado
 
 Salida correcta:
@@ -145,8 +147,8 @@ Ensayo de estres de 400 pruebas con fragmentos activos de 4 a 12 segundos:
 
 ```text
 Referencias validadas: 400
-Confirmadas correctas: 354
-Ambiguas no confirmadas: 46
+Confirmadas correctas: 351
+Ambiguas no confirmadas: 49
 Correctas por debajo del umbral: 0
 Confusiones reales: 0
 Capturas no usables: 0
@@ -158,9 +160,9 @@ Ensayo del perfil `Micro real`:
 
 ```text
 Referencias validadas: 120
-Confirmadas correctas: 109
-Ambiguas no confirmadas: 10
-Correctas por debajo del umbral: 1
+Confirmadas correctas: 103
+Ambiguas no confirmadas: 15
+Correctas por debajo del umbral: 2
 Confusiones reales: 0
 Capturas no usables: 0
 ```

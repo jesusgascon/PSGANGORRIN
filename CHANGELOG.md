@@ -13,6 +13,8 @@
 - Preprocesado suave de capturas reales: centrado DC y puerta de ruido ligera sin amplificar ruido debil.
 - Huellas por segmentos fuertes de cada MP3 para comparar capturas reales contra la parte mas representativa de cada toque.
 - Ambiguedad mas estricta: si otro toque queda justo en el margen de seguridad, la app pide repetir en vez de confirmar.
+- Perfil `Micro real` menos dependiente de fingerprints exactos y mas apoyado en patron, envolvente e intervalos.
+- `scripts/analyze_capture.py` muestra detalle de patron, ritmo, envolvente, intervalos, penalizacion de micro y segmento usado.
 
 ## v1.1.0
 

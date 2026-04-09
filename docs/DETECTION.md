@@ -38,6 +38,8 @@ Recomendacion practica:
 
 El modo `Micro real` baja el umbral visible para permitir capturas de altavoz, pero compensa con reglas mas estrictas de evidencia, votos ritmicos y separacion entre candidatos. Si dos referencias quedan muy cerca, la app muestra resultado ambiguo.
 
+En `Micro real`, los fingerprints exactos pesan menos que en una comparacion limpia. El audio que sale por un altavoz y vuelve por un microfono puede cambiar transitorios, tempo aparente y frecuencias. Por eso este modo da mas importancia al patron de onsets, envolvente e intervalos, y penaliza candidatos que ganan solo por fingerprints cuando el patron general no acompaña.
+
 ## Tramos Activos De La Captura
 
 La escucha real no siempre empieza justo cuando empieza el toque. Puede haber silencio inicial, eco final, ruido de sala o un golpe aislado antes del patron principal.
@@ -111,6 +113,8 @@ Cada MP3 se compara usando su huella global y varios segmentos fuertes guardados
 Esto ayuda con capturas reales de microfono, porque el usuario normalmente graba solo una parte concreta del toque. Si un segmento fuerte encaja mejor que el archivo completo, la app usa ese segmento como mejor evidencia para esa referencia.
 
 La confianza se penaliza por calidad de senal y evidencia. Ya no se infla solo porque una referencia sea "la menos mala".
+
+En capturas de microfono, la confianza tambien se penaliza si el candidato tiene votos de fingerprint pero bajo patron global. Esto evita que un toque gane por coincidencias locales fragiles cuando el ritmo completo no encaja.
 
 ## Fase 4: Aceptacion
 

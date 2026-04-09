@@ -102,10 +102,21 @@ def print_capture_result(capture_path: Path, references: list[dict], limits: dic
     print("Ranking:")
     for index, match in enumerate(matches[: max(1, args.top)], 1):
         alignment = match.get("alignment", {})
+        diagnostics = match.get("diagnostics", {})
+        variant = match.get("referenceVariant", {})
+        variant_label = "completo"
+        if variant.get("type") == "segment":
+            variant_label = f"segmento {variant.get('startSeconds', 0):.1f}s/{variant.get('durationSeconds', 0):.1f}s"
         print(
             f"  {index}. {match['reference'].get('name')} - {match['confidence']}% "
             f"- evidencia {match['evidenceScore']:.3f} "
-            f"- votos {alignment.get('fingerprintVotes', 0)}"
+            f"- votos {alignment.get('fingerprintVotes', 0)} "
+            f"- patron {diagnostics.get('patternScore', 0):.3f} "
+            f"- ritmo {diagnostics.get('rhythmSimilarity', 0):.3f} "
+            f"- envolvente {diagnostics.get('envelopeSimilarity', 0):.3f} "
+            f"- intervalos {diagnostics.get('intervalSimilarity', 0):.3f} "
+            f"- penalizacion micro {diagnostics.get('microphonePenalty', 0):.3f} "
+            f"- {variant_label}"
         )
 
 
