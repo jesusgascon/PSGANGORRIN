@@ -805,6 +805,7 @@ function syncModeUi() {
     setAdminActivePanel(state.adminActivePanel || "admin-panel");
     updateBottomNavState(state.adminActivePanel);
   } else {
+    stopReferencePreviews();
     updateBottomNavState("detect");
   }
 }
@@ -838,6 +839,7 @@ function refreshHeaderStats() {
 
 async function toggleMode() {
   if (state.uiMode === "admin") {
+    stopReferencePreviews();
     await logoutAdminSession();
     state.uiMode = "user";
     persistMode();
@@ -2880,6 +2882,18 @@ function revokeReferencePreview(reference) {
   }
 }
 
+function stopReferencePreviews() {
+  state.references.forEach((reference) => {
+    if (!reference.previewAudio) {
+      return;
+    }
+
+    reference.previewAudio.pause();
+    reference.previewAudio.currentTime = 0;
+  });
+  resetPreviewButtons();
+}
+
 async function previewReference(referenceId, button) {
   const reference = state.references.find((item) => item.id === referenceId);
   if (!reference?.previewUrl) {
@@ -2898,13 +2912,7 @@ async function previewReference(referenceId, button) {
     return;
   }
 
-  resetPreviewButtons();
-  state.references.forEach((item) => {
-    if (item.id !== reference.id && item.previewAudio) {
-      item.previewAudio.pause();
-      item.previewAudio.currentTime = 0;
-    }
-  });
+  stopReferencePreviews();
 
   button.textContent = "Parar";
   reference.previewAudio.onended = () => {
@@ -3056,6 +3064,10 @@ function handleBottomNav(event) {
 }
 
 function openAdminPanel(panel, { focusSearch = false } = {}) {
+  if (panel !== "admin-library") {
+    stopReferencePreviews();
+  }
+
   setAdminActivePanel(panel);
   updateBottomNavState(panel);
   const targetSection = window.innerWidth < 700
