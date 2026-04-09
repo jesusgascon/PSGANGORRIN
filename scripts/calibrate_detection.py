@@ -211,6 +211,7 @@ def build_statistics(metrics: list[dict]) -> dict:
 
 def build_recommended_limits(statistics: dict) -> dict:
     p10 = lambda key: statistics[key]["p10"]
+    capture_seconds = 6
 
     limits = dict(DEFAULT_LIMITS)
     limits.update(
@@ -218,11 +219,11 @@ def build_recommended_limits(statistics: dict) -> dict:
             "minSignalRms": rounded(clamp(p10("rms") * 0.4, 0.008, 0.035), 6),
             "minSignalPeak": rounded(clamp(p10("peakAmplitude") * 0.3, 0.03, 0.12), 6),
             "minPeakRate": rounded(clamp(p10("peakRate") * 0.45, 0.35, 1.5), 6),
-            "minCapturePeaks": int(clamp(round(p10("peaksCount") * 0.25), 3, 12)),
+            "minCapturePeaks": int(clamp(round(p10("peakRate") * capture_seconds * 0.8), 3, 8)),
             "minSignalQuality": rounded(clamp(p10("signalQuality") * 0.55, 0.18, 0.55), 6),
             "minOnsetContrast": rounded(clamp(p10("onsetContrast") * 0.45, 0.08, 0.35), 6),
             "minCaptureFingerprints": int(
-                clamp(round(p10("fingerprintsCount") * 0.08), 2, 30)
+                clamp(round(p10("peakRate") * capture_seconds * 1.25), 2, 12)
             ),
             "minRhythmicStability": rounded(
                 clamp(p10("rhythmicStability") * 0.45, 0.1, 0.45), 6

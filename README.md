@@ -275,12 +275,14 @@ El navegador puede mostrar aviso de certificado porque es un certificado local d
 - `assets/icons/`: iconos de la app.
 - `scripts/library_manifest.py`: genera manifest y features.
 - `scripts/calibrate_detection.py`: genera calibracion e informe.
+- `scripts/validate_detection.py`: simula escuchas con MP3 de la biblioteca y valida resultados.
 - `scripts/serve_app.py`: servidor HTTP local con administracion.
 - `scripts/serve_https.py`: servidor HTTPS local.
 - `scripts/generate-dev-cert.sh`: certificado local para HTTPS.
 - `tests/`: pruebas automaticas.
 - `docs/DETECTION.md`: metodo de deteccion.
 - `docs/CALIBRATION.md`: informe de calibracion.
+- `docs/VALIDATION.md`: como simular y validar detecciones.
 - `docs/AUDIT.md`: auditorias realizadas.
 - `ARCHITECTURE.md`: arquitectura y reglas de mantenimiento.
 
@@ -294,8 +296,29 @@ node --check sw.js
 node --check audio-recorder-worklet.js
 python3 -m py_compile scripts/library_manifest.py scripts/calibrate_detection.py scripts/serve_app.py scripts/serve_https.py tests/test_library_manifest.py tests/test_detection_calibration.py tests/run_tests.py
 python3 scripts/calibrate_detection.py
+python3 scripts/validate_detection.py --all --skip-regenerate
 python3 tests/run_tests.py
 ```
+
+Validar un toque aleatorio de la biblioteca:
+
+```bash
+python3 scripts/validate_detection.py
+```
+
+Validar un archivo concreto:
+
+```bash
+python3 scripts/validate_detection.py --file "Prendimiento - Gritos.mp3"
+```
+
+Validar toda la biblioteca:
+
+```bash
+python3 scripts/validate_detection.py --all
+```
+
+Esta prueba no usa el microfono. Toma un fragmento simulado de cada MP3, lo compara contra la biblioteca y comprueba que la mejor coincidencia sea el mismo archivo.
 
 Comprobacion rapida de CSS:
 

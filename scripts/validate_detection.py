@@ -1,0 +1,713 @@
+#!/usr/bin/env python3
+
+from __future__ import annotations
+
+import argparse
+import json
+import random
+import sys
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_DIR.parent
+sys.path.insert(0, str(SCRIPT_DIR))
+
+from calibrate_detection import write_calibration_files  # noqa: E402
+from library_manifest import write_library_files  # noqa: E402
+
+
+ANALYSIS_WINDOW = 2048
+FINGERPRINT_MAX_NEIGHBORS = 5
+FINGERPRINT_MAX_INTERVAL_SECONDS = 3.2
+FINGERPRINT_INTERVAL_STEP = 0.05
+FINGERPRINT_OFFSET_STEP = 0.25
+SUBSEQUENCE_STRIDE_DIVISOR = 18
+MATCHES_LIMIT = 4
+
+MODE_PRESETS = {
+    "fast": {
+        "fingerprint": 0.32,
+        "rhythm": 0.28,
+        "envelope": 0.08,
+        "interval": 0.16,
+        "density": 0.06,
+        "tempo": 0.06,
+        "peaks": 0.04,
+    },
+    "balanced": {
+        "fingerprint": 0.36,
+        "rhythm": 0.24,
+        "envelope": 0.08,
+        "interval": 0.18,
+        "density": 0.06,
+        "tempo": 0.06,
+        "peaks": 0.02,
+    },
+    "strict": {
+        "fingerprint": 0.42,
+        "rhythm": 0.2,
+        "envelope": 0.06,
+        "interval": 0.2,
+        "density": 0.04,
+        "tempo": 0.06,
+        "peaks": 0.02,
+    },
+}
+
+DEFAULT_LIMITS = {
+    "minOnsetThreshold": 0.18,
+    "minSignalRms": 0.012,
+    "minSignalPeak": 0.045,
+    "minPeakRate": 0.45,
+    "minCapturePeaks": 3,
+    "minMatchConfidence": 28,
+    "minSignalQuality": 0.22,
+    "minOnsetContrast": 0.12,
+    "minCaptureFingerprints": 2,
+    "minRhythmicStability": 0.12,
+    "minMatchAbsoluteSimilarity": 0.38,
+    "minMatchEvidence": 0.42,
+    "minFingerprintVotes": 2,
+    "minFingerprintSimilarity": 0.08,
+    "minRhythmSimilarity": 0.36,
+}
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Simula detecciones con MP3 de la biblioteca para validar la calibracion."
+    )
+    parser.add_argument("--project-root", type=Path, default=PROJECT_ROOT)
+    parser.add_argument("--seconds", type=float, default=6.0, help="Duracion simulada de escucha.")
+    parser.add_argument("--mode", choices=sorted(MODE_PRESETS), default="fast")
+    parser.add_argument("--minimum-confidence", type=float, default=62)
+    parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--all", action="store_true", help="Valida todas las referencias.")
+    parser.add_argument("--file", help="Valida solo el archivo indicado.")
+    parser.add_argument(
+        "--skip-regenerate",
+        action="store_true",
+        help="No regenera manifest/features/calibration antes de validar.",
+    )
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    project_root = args.project_root.resolve()
+
+    if not args.skip_regenerate:
+        write_library_files(project_root)
+        write_calibration_files(project_root, regenerate_library=False)
+
+    references = load_references(project_root)
+    limits = load_limits(project_root)
+    selected = select_references(references, args)
+    results = [
+        validate_reference(reference, references, limits, args)
+        for reference in selected
+    ]
+
+    passed = [result for result in results if result["passed"]]
+    failed = [result for result in results if not result["passed"]]
+
+    print(f"Referencias validadas: {len(results)}")
+    print(f"Correctas: {len(passed)}")
+    print(f"Fallidas: {len(failed)}")
+    print("")
+
+    for result in results:
+        status = "OK" if result["passed"] else "FALLO"
+        print(f"[{status}] {result['expected_name']}")
+        print(f"  Esperado: {result['expected_file']}")
+        if result["usable"]:
+            print(
+                "  Mejor: "
+                f"{result['best_name']} "
+                f"({result['confidence']}%, evidencia {result['evidence']:.3f})"
+            )
+        else:
+            print(f"  Captura no usable: {result['reason']}")
+        if result["ranking"]:
+            print("  Ranking:")
+            for index, match in enumerate(result["ranking"], start=1):
+                print(
+                    f"    {index}. {match['name']} "
+                    f"- {match['confidence']}% "
+                    f"- evidencia {match['evidenceScore']:.3f}"
+                )
+        print("")
+
+    if failed:
+        raise SystemExit(1)
+
+
+def load_references(project_root: Path) -> list[dict]:
+    features_path = project_root / "assets" / "pasos" / "features.json"
+    payload = json.loads(features_path.read_text(encoding="utf-8"))
+    references = [
+        reference
+        for reference in payload.get("references", [])
+        if isinstance(reference.get("features"), dict)
+    ]
+    if not references:
+        raise SystemExit("No hay referencias con features para validar.")
+    return references
+
+
+def load_limits(project_root: Path) -> dict:
+    calibration_path = project_root / "assets" / "pasos" / "calibration.json"
+    if not calibration_path.exists():
+        return dict(DEFAULT_LIMITS)
+
+    payload = json.loads(calibration_path.read_text(encoding="utf-8"))
+    limits = dict(DEFAULT_LIMITS)
+    for key, value in payload.get("recommendedLimits", {}).items():
+        try:
+            limits[key] = float(value)
+        except (TypeError, ValueError):
+            pass
+    return limits
+
+
+def select_references(references: list[dict], args: argparse.Namespace) -> list[dict]:
+    if args.file:
+        selected = [reference for reference in references if reference.get("file") == args.file]
+        if not selected:
+            raise SystemExit(f"No existe la referencia {args.file!r}")
+        return selected
+
+    if args.all:
+        return references
+
+    rng = random.Random(args.seed)
+    return [rng.choice(references)]
+
+
+def validate_reference(
+    reference: dict,
+    all_references: list[dict],
+    limits: dict,
+    args: argparse.Namespace,
+) -> dict:
+    capture = build_capture_from_reference(reference, args.seconds)
+    usable, reason = is_usable_capture(capture, limits)
+    matches = compare_against_references(capture, all_references, limits, args.mode) if usable else []
+    best = matches[0] if matches else None
+    reliable = bool(best and is_reliable_match(best, limits, args.minimum_confidence))
+    expected_file = reference.get("file")
+    passed = bool(reliable and best["reference"].get("file") == expected_file)
+
+    return {
+        "passed": passed,
+        "usable": usable,
+        "reason": reason,
+        "expected_file": expected_file,
+        "expected_name": reference.get("name") or expected_file,
+        "best_name": best["reference"].get("name") if best else "",
+        "confidence": best["confidence"] if best else 0,
+        "evidence": best["evidenceScore"] if best else 0,
+        "ranking": [
+            {
+                "name": match["reference"].get("name"),
+                "file": match["reference"].get("file"),
+                "confidence": match["confidence"],
+                "evidenceScore": match["evidenceScore"],
+            }
+            for match in matches
+        ],
+    }
+
+
+def build_capture_from_reference(reference: dict, seconds: float) -> dict:
+    features = reference["features"]
+    hop_seconds = float(features.get("hopSeconds") or 0.04644)
+    window_length = max(4, round(seconds / hop_seconds))
+    onset_series = features.get("onsetSeries") or features.get("onset") or []
+    envelope_series = features.get("envelopeSeries") or features.get("envelope") or []
+    start = choose_segment_start(onset_series, window_length)
+    end = min(len(onset_series), start + window_length)
+
+    onset = list(onset_series[start:end])
+    envelope = list(envelope_series[start:end])
+    peak_times = [
+        float(time) - start * hop_seconds
+        for time in features.get("peakTimes", [])
+        if start * hop_seconds <= float(time) < end * hop_seconds
+    ]
+    peak_indexes = [round(time / hop_seconds) for time in peak_times]
+    duration = max(seconds, len(onset) * hop_seconds)
+    peak_rate = len(peak_times) / max(0.1, duration)
+    fingerprints = build_rhythm_fingerprints(peak_times)
+    onset_profile = measure_onset_profile(onset, peak_indexes)
+    rhythmic_stability = estimate_rhythmic_stability(peak_times)
+    stats = {
+        "rms": float(features.get("rms") or 0),
+        "peak": float(features.get("peakAmplitude") or 0),
+    }
+
+    return {
+        "envelopeSeries": envelope,
+        "onsetSeries": onset,
+        "intervals": build_interval_profile(peak_indexes, hop_seconds),
+        "density": len(peak_indexes) / max(1, len(onset)),
+        "peakRate": peak_rate,
+        "tempoEstimate": estimate_tempo(peak_times),
+        "peaksCount": len(peak_indexes),
+        "peakTimes": peak_times,
+        "fingerprints": fingerprints,
+        "fingerprintsCount": len(fingerprints),
+        "durationSeconds": duration,
+        "hopSeconds": hop_seconds,
+        "rms": stats["rms"],
+        "peakAmplitude": stats["peak"],
+        "onsetContrast": onset_profile["contrast"],
+        "onsetPeakMean": onset_profile["peakMean"],
+        "rhythmicStability": rhythmic_stability,
+        "signalQuality": estimate_signal_quality(
+            stats,
+            len(peak_indexes),
+            peak_rate,
+            onset_profile["contrast"],
+            rhythmic_stability,
+        ),
+    }
+
+
+def choose_segment_start(onset: list[float], window_length: int) -> int:
+    if len(onset) <= window_length:
+        return 0
+
+    best_start = 0
+    best_energy = -1.0
+    stride = max(1, window_length // 3)
+    for start in range(0, len(onset) - window_length + 1, stride):
+        energy = sum(onset[start : start + window_length])
+        if energy > best_energy:
+            best_energy = energy
+            best_start = start
+    return best_start
+
+
+def is_usable_capture(features: dict, limits: dict) -> tuple[bool, str]:
+    checks = [
+        ("rms", features["rms"], limits["minSignalRms"]),
+        ("peakAmplitude", features["peakAmplitude"], limits["minSignalPeak"]),
+        ("peaksCount", features["peaksCount"], limits["minCapturePeaks"]),
+        ("peakRate", features["peakRate"], limits["minPeakRate"]),
+        ("fingerprintsCount", features["fingerprintsCount"], limits["minCaptureFingerprints"]),
+        ("signalQuality", features["signalQuality"], limits["minSignalQuality"]),
+        ("onsetContrast", features["onsetContrast"], limits["minOnsetContrast"]),
+        ("rhythmicStability", features["rhythmicStability"], limits["minRhythmicStability"]),
+    ]
+    for name, value, minimum in checks:
+        if value < minimum:
+            return False, f"{name}={value:.3f} < {minimum:.3f}"
+    return True, ""
+
+
+def compare_against_references(
+    input_features: dict,
+    references: list[dict],
+    limits: dict,
+    mode_key: str,
+) -> list[dict]:
+    weights = MODE_PRESETS.get(mode_key, MODE_PRESETS["fast"])
+    scored = []
+
+    for reference in references:
+        reference_features = reference["features"]
+        reference_hop_seconds = reference_features.get("hopSeconds") or input_features["hopSeconds"]
+        target_window_length = max(
+            2,
+            round(input_features["durationSeconds"] / reference_hop_seconds),
+        )
+        rhythm_match = best_subsequence_match(
+            input_features["onsetSeries"],
+            reference_features["onsetSeries"],
+            None,
+            target_window_length,
+        )
+        envelope_match = best_subsequence_match(
+            input_features["envelopeSeries"],
+            reference_features["envelopeSeries"],
+            rhythm_match["offset"],
+            rhythm_match["windowLength"],
+        )
+        fingerprint_match = compare_rhythm_fingerprints(
+            input_features["fingerprints"],
+            reference_features["fingerprints"],
+        )
+
+        fingerprint_distance = 1 - fingerprint_match["similarity"]
+        rhythm_distance = 1 - rhythm_match["similarity"]
+        envelope_distance = 1 - envelope_match["similarity"]
+        interval_distance = vector_distance(input_features["intervals"], reference_features["intervals"])
+        density_distance = abs(input_features["density"] - reference_features["density"])
+        peaks_distance = abs(input_features["peakRate"] - reference_features["peakRate"]) / 8
+        tempo_distance = (
+            abs(input_features["tempoEstimate"] - reference_features["tempoEstimate"]) / 180
+            if input_features["tempoEstimate"] and reference_features["tempoEstimate"]
+            else 0.15
+        )
+        distance = (
+            fingerprint_distance * weights["fingerprint"]
+            + rhythm_distance * weights["rhythm"]
+            + envelope_distance * weights["envelope"]
+            + interval_distance * weights["interval"]
+            + density_distance * weights["density"]
+            + tempo_distance * weights["tempo"]
+            + peaks_distance * weights["peaks"]
+        )
+        absolute_similarity = clamp(1 - distance / 1.1, 0, 1)
+        evidence_score = estimate_match_evidence(
+            input_features,
+            rhythm_match,
+            fingerprint_match,
+            absolute_similarity,
+            limits,
+        )
+        signal_adjusted_similarity = absolute_similarity * clamp(input_features["signalQuality"], 0, 1) * evidence_score
+        scored.append(
+            {
+                "reference": reference,
+                "distance": distance,
+                "absoluteSimilarity": absolute_similarity,
+                "signalAdjustedSimilarity": signal_adjusted_similarity,
+                "evidenceScore": evidence_score,
+                "alignment": {
+                    **rhythm_match,
+                    "fingerprintSimilarity": fingerprint_match["similarity"],
+                    "fingerprintOffsetSeconds": fingerprint_match["offsetSeconds"],
+                    "fingerprintVotes": fingerprint_match["votes"],
+                },
+                "confidence": 0,
+            }
+        )
+
+    scored.sort(key=lambda item: item["distance"])
+    best = scored[0]["distance"] if scored else 1
+    second = scored[1]["distance"] if len(scored) > 1 else best + 0.1
+
+    matches = []
+    for index, item in enumerate(scored[:MATCHES_LIMIT]):
+        separation_boost = (
+            max(0, min(8, (second - best) * 36))
+            if index == 0 and item["evidenceScore"] >= limits["minMatchEvidence"]
+            else 0
+        )
+        item["confidence"] = round(clamp(item["signalAdjustedSimilarity"] * 100 + separation_boost, 0, 98))
+        matches.append(item)
+    return matches
+
+
+def estimate_match_evidence(
+    input_features: dict,
+    rhythm_match: dict,
+    fingerprint_match: dict,
+    absolute_similarity: float,
+    limits: dict,
+) -> float:
+    vote_score = clamp(
+        fingerprint_match["votes"] / max(limits["minFingerprintVotes"], input_features["fingerprintsCount"] * 0.28),
+        0,
+        1,
+    )
+    fingerprint_score = clamp(fingerprint_match["similarity"] / 0.35, 0, 1)
+    rhythm_score = clamp(rhythm_match["similarity"] / 0.72, 0, 1)
+    absolute_score = clamp(absolute_similarity / 0.62, 0, 1)
+    return clamp(
+        fingerprint_score * 0.28
+        + vote_score * 0.24
+        + rhythm_score * 0.2
+        + absolute_score * 0.18
+        + input_features["rhythmicStability"] * 0.1,
+        0,
+        1,
+    )
+
+
+def is_reliable_match(match: dict, limits: dict, minimum_confidence: float) -> bool:
+    return (
+        match["confidence"] >= max(limits["minMatchConfidence"], minimum_confidence)
+        and match["absoluteSimilarity"] >= limits["minMatchAbsoluteSimilarity"]
+        and match["evidenceScore"] >= limits["minMatchEvidence"]
+        and match["alignment"]["fingerprintVotes"] >= limits["minFingerprintVotes"]
+        and (
+            match["alignment"]["fingerprintSimilarity"] >= limits["minFingerprintSimilarity"]
+            or match["alignment"]["similarity"] >= limits["minRhythmSimilarity"]
+        )
+    )
+
+
+def compare_rhythm_fingerprints(query_fingerprints: list[dict], target_fingerprints: list[dict]) -> dict:
+    if not query_fingerprints or not target_fingerprints:
+        return {"similarity": 0, "offsetSeconds": 0, "votes": 0}
+
+    target_by_hash = {}
+    for fingerprint in target_fingerprints:
+        target_by_hash.setdefault(fingerprint["hash"], []).append(float(fingerprint["time"]))
+
+    offset_votes = {}
+    shared_hashes = 0
+    votes = 0
+    for fingerprint in query_fingerprints:
+        target_times = target_by_hash.get(fingerprint["hash"])
+        if not target_times:
+            continue
+        shared_hashes += 1
+        for target_time in target_times:
+            offset_key = round((target_time - float(fingerprint["time"])) / FINGERPRINT_OFFSET_STEP)
+            offset_votes[offset_key] = offset_votes.get(offset_key, 0) + 1
+            votes += 1
+
+    if not offset_votes:
+        return {"similarity": 0, "offsetSeconds": 0, "votes": 0}
+
+    best_offset_key, best_votes = max(offset_votes.items(), key=lambda item: item[1])
+    coverage = shared_hashes / max(1, len(query_fingerprints))
+    coherence = best_votes / max(1, votes)
+    vote_strength = clamp(best_votes / max(3, len(query_fingerprints) * 0.55), 0, 1)
+    return {
+        "similarity": clamp(coverage * 0.45 + coherence * 0.25 + vote_strength * 0.3, 0, 1),
+        "offsetSeconds": best_offset_key * FINGERPRINT_OFFSET_STEP,
+        "votes": best_votes,
+    }
+
+
+def best_subsequence_match(
+    query: list[float],
+    target: list[float],
+    preferred_offset: int | None = None,
+    target_window_length: int | None = None,
+) -> dict:
+    if not query or not target:
+        return {"similarity": 0, "offset": 0, "windowLength": 0}
+
+    window_length = max(2, min(len(target), round(target_window_length or len(query))))
+    comparable_query = resample_vector(query, window_length)
+
+    if len(target) <= window_length:
+        return {
+            "similarity": normalized_correlation(resample_vector(query, max(len(target), 2)), target),
+            "offset": 0,
+            "windowLength": len(target),
+        }
+
+    if preferred_offset is not None:
+        offset = max(0, min(len(target) - window_length, round(preferred_offset)))
+        return {
+            "similarity": normalized_correlation(comparable_query, target[offset : offset + window_length]),
+            "offset": offset,
+            "windowLength": window_length,
+        }
+
+    stride = max(1, window_length // SUBSEQUENCE_STRIDE_DIVISOR)
+    best = {"similarity": -1, "offset": 0}
+    for offset in range(0, len(target) - window_length + 1, stride):
+        similarity = normalized_correlation(comparable_query, target[offset : offset + window_length])
+        if similarity > best["similarity"]:
+            best = {"similarity": similarity, "offset": offset}
+
+    refined_start = max(0, best["offset"] - stride + 1)
+    refined_end = min(len(target) - window_length, best["offset"] + stride - 1)
+    for offset in range(refined_start, refined_end + 1):
+        similarity = normalized_correlation(comparable_query, target[offset : offset + window_length])
+        if similarity > best["similarity"]:
+            best = {"similarity": similarity, "offset": offset}
+
+    return {
+        "similarity": clamp(best["similarity"], 0, 1),
+        "offset": best["offset"],
+        "windowLength": window_length,
+    }
+
+
+def normalized_correlation(left: list[float], right: list[float]) -> float:
+    size = min(len(left), len(right))
+    if not size:
+        return 0
+
+    left = left[:size]
+    right = right[:size]
+    left_mean = sum(left) / size
+    right_mean = sum(right) / size
+    numerator = 0.0
+    left_energy = 0.0
+    right_energy = 0.0
+    for left_value, right_value in zip(left, right):
+        left_centered = left_value - left_mean
+        right_centered = right_value - right_mean
+        numerator += left_centered * right_centered
+        left_energy += left_centered * left_centered
+        right_energy += right_centered * right_centered
+
+    denominator = (left_energy * right_energy) ** 0.5
+    if not denominator:
+        return 0
+    return (numerator / denominator + 1) / 2
+
+
+def vector_distance(left: list[float], right: list[float]) -> float:
+    size = max(len(left), len(right))
+    total = 0.0
+    for index in range(size):
+        a = left[index] if index < len(left) else (left[-1] if left else 0)
+        b = right[index] if index < len(right) else (right[-1] if right else 0)
+        total += (a - b) ** 2
+    return (total / size) ** 0.5 if size else 0
+
+
+def resample_vector(vector: list[float], target_size: int) -> list[float]:
+    if not vector:
+        return [0.0] * target_size
+    if len(vector) == target_size:
+        return list(vector)
+
+    output = []
+    last_index = len(vector) - 1
+    for index in range(target_size):
+        position = (index / (target_size - 1)) * last_index
+        base = int(position)
+        mix = position - base
+        left = vector[base]
+        right = vector[min(base + 1, last_index)]
+        output.append(left + (right - left) * mix)
+    return output
+
+
+def build_interval_profile(peak_indexes: list[int], hop_seconds: float) -> list[float]:
+    bins = 16
+    histogram = [0.0] * bins
+    min_interval = 0.08
+    max_interval = 2.0
+    import math
+
+    log_min = math.log(min_interval)
+    log_range = math.log(max_interval) - log_min
+    for index in range(1, len(peak_indexes)):
+        interval_seconds = (peak_indexes[index] - peak_indexes[index - 1]) * hop_seconds
+        if interval_seconds < min_interval or interval_seconds > max_interval:
+            continue
+        position = (math.log(interval_seconds) - log_min) / log_range
+        bin_index = max(0, min(bins - 1, int(position * bins)))
+        histogram[bin_index] += 1
+    return normalize_array(histogram)
+
+
+def build_rhythm_fingerprints(peak_times: list[float]) -> list[dict]:
+    fingerprints = []
+    for anchor_index, anchor_time in enumerate(peak_times):
+        max_second = min(len(peak_times) - 1, anchor_index + FINGERPRINT_MAX_NEIGHBORS)
+        for second_index in range(anchor_index + 1, max_second + 1):
+            first_interval = peak_times[second_index] - anchor_time
+            if first_interval <= 0 or first_interval > FINGERPRINT_MAX_INTERVAL_SECONDS:
+                continue
+            max_third = min(len(peak_times) - 1, second_index + FINGERPRINT_MAX_NEIGHBORS)
+            for third_index in range(second_index + 1, max_third + 1):
+                second_interval = peak_times[third_index] - peak_times[second_index]
+                total_interval = peak_times[third_index] - anchor_time
+                if (
+                    second_interval <= 0
+                    or second_interval > FINGERPRINT_MAX_INTERVAL_SECONDS
+                    or total_interval > FINGERPRINT_MAX_INTERVAL_SECONDS
+                ):
+                    continue
+                fingerprints.append(
+                    {
+                        "hash": f"{quantize_interval(first_interval)}:{quantize_interval(second_interval)}",
+                        "time": round(anchor_time, 3),
+                    }
+                )
+    return fingerprints
+
+
+def quantize_interval(seconds: float) -> int:
+    return max(1, round(seconds / FINGERPRINT_INTERVAL_STEP))
+
+
+def measure_onset_profile(onset: list[float], peak_indexes: list[int]) -> dict:
+    if not onset:
+        return {"contrast": 0.0, "peakMean": 0.0}
+
+    sorted_values = sorted(onset)
+    median = sorted_values[int(len(sorted_values) * 0.5)] if sorted_values else 0.0
+    p90 = sorted_values[int(len(sorted_values) * 0.9)] if sorted_values else 0.0
+    peak_values = [onset[index] for index in peak_indexes if 0 <= index < len(onset)]
+    peak_mean = sum(peak_values) / len(peak_values) if peak_values else 0.0
+    return {
+        "contrast": clamp(max(p90, peak_mean) - median, 0, 1),
+        "peakMean": peak_mean,
+    }
+
+
+def estimate_rhythmic_stability(peak_times: list[float]) -> float:
+    if len(peak_times) < 4:
+        return 0
+
+    intervals = [
+        peak_times[index] - peak_times[index - 1]
+        for index in range(1, len(peak_times))
+        if 0.06 < peak_times[index] - peak_times[index - 1] < 2.4
+    ]
+    if len(intervals) < 3:
+        return 0
+
+    intervals.sort()
+    median = intervals[len(intervals) // 2]
+    if not median:
+        return 0
+    deviations = sorted(abs(interval - median) for interval in intervals)
+    median_deviation = deviations[len(deviations) // 2] if deviations else 0
+    return clamp(1 - median_deviation / max(0.08, median * 0.9), 0, 1)
+
+
+def estimate_signal_quality(
+    stats: dict,
+    peaks_count: int,
+    peak_rate: float,
+    onset_contrast: float,
+    rhythmic_stability: float,
+) -> float:
+    rms_score = clamp(stats["rms"] / 0.08, 0, 1)
+    peak_score = clamp(stats["peak"] / 0.35, 0, 1)
+    rhythm_score = clamp(peaks_count / 8, 0, 1)
+    rate_score = clamp(peak_rate / 3, 0, 1)
+    contrast_score = clamp(onset_contrast / 0.28, 0, 1)
+    return (
+        rms_score * 0.22
+        + peak_score * 0.18
+        + rhythm_score * 0.18
+        + rate_score * 0.12
+        + contrast_score * 0.18
+        + rhythmic_stability * 0.12
+    )
+
+
+def estimate_tempo(peak_times: list[float]) -> float:
+    if len(peak_times) < 2:
+        return 0.0
+    intervals = sorted(
+        peak_times[index] - peak_times[index - 1]
+        for index in range(1, len(peak_times))
+        if peak_times[index] > peak_times[index - 1]
+    )
+    if not intervals:
+        return 0.0
+    median = intervals[len(intervals) // 2]
+    return max(0.0, min(260.0, 60 / median if median else 0.0))
+
+
+def normalize_array(values: list[float]) -> list[float]:
+    maximum = max(values, default=0)
+    if not maximum:
+        return [0.0 for _ in values]
+    return [value / maximum for value in values]
+
+
+def clamp(value: float, minimum: float, maximum: float) -> float:
+    return min(maximum, max(minimum, value))
+
+
+if __name__ == "__main__":
+    main()

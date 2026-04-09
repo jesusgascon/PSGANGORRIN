@@ -12,8 +12,8 @@ Generado por `scripts/calibrate_detection.py`.
 
 | Variable | Valor |
 | --- | --- |
-| `minCaptureFingerprints` | `23` |
-| `minCapturePeaks` | `12` |
+| `minCaptureFingerprints` | `5` |
+| `minCapturePeaks` | `3` |
 | `minFingerprintSimilarity` | `0.08` |
 | `minFingerprintVotes` | `4` |
 | `minMatchAbsoluteSimilarity` | `0.38` |

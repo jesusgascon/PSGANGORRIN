@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-04-09T12:35:12.251500+00:00",
+  "generatedAt": "2026-04-09T12:54:21.909606+00:00",
   "source": "scripts/calibrate_detection.py",
   "references": 20,
   "recommendedLimits": {
@@ -7,11 +7,11 @@
     "minSignalRms": 0.035,
     "minSignalPeak": 0.12,
     "minPeakRate": 0.35,
-    "minCapturePeaks": 12,
+    "minCapturePeaks": 3,
     "minMatchConfidence": 28,
     "minSignalQuality": 0.447761,
     "minOnsetContrast": 0.097155,
-    "minCaptureFingerprints": 23,
+    "minCaptureFingerprints": 5,
     "minRhythmicStability": 0.16369,
     "minMatchAbsoluteSimilarity": 0.38,
     "minMatchEvidence": 0.42,
