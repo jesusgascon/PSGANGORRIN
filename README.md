@@ -1,156 +1,292 @@
 # CofraBeat
 
-Aplicacion web mobile-first para detectar toques de tambor de Semana Santa comparando lo que escucha el microfono contra una biblioteca comun de audios `mp3`.
+Aplicacion web mobile-first para detectar toques de tambor de Semana Santa. La app escucha por el microfono, analiza el ritmo grabado y lo compara contra una biblioteca comun de audios `mp3`.
 
-## Estado Del Proyecto
+Version actual: `v1.0.0`
 
-Prototipo funcional preparado para uso local y pruebas en red Wi-Fi:
+Release: <https://github.com/jesusgascon/PSGANGORRIN/releases/tag/v1.0.0>
 
-- modo usuario para escuchar, detectar y revisar resultados
-- modo administracion protegido para mantener la biblioteca
-- base comun de toques desde `assets/pasos`
-- metadatos globales editables desde la app
-- detector con rechazo de silencio, ruido y coincidencias no fiables
-- interfaz visual cofrade optimizada para movil
+## Que Es
 
-## Funcionalidades
+CofraBeat es una herramienta para Cofradias y proyectos de Semana Santa que permite:
 
-- Boton central para escuchar desde el microfono.
-- Navegacion inferior tipo app nativa en modo usuario y administracion.
-- Resultado visual con confianza y ranking solo cuando hay evidencia fiable.
-- Historial local de detecciones.
-- Ajustes de duracion de escucha, confianza minima y perfil de analisis.
-- Panel de administracion para buscar, filtrar, etiquetar, renombrar y escuchar referencias.
-- Carga manual persistente en el navegador mediante `IndexedDB`.
-- Biblioteca comun global mediante archivos `mp3` en `assets/pasos`.
-- Metadatos globales en `assets/pasos/metadata.json`.
+- Escuchar un toque de tambor desde el microfono del movil o del ordenador.
+- Compararlo con una base de datos de toques ya cargados.
+- Mostrar si hay una deteccion fiable.
+- Consultar un ranking de coincidencias cuando la evidencia es suficiente.
+- Mantener una biblioteca comun de audios de referencia.
+- Administrar nombres visibles, etiquetas, notas y metadatos de cada toque.
+
+No es una IA entrenada ni una copia completa de Shazam. Es un detector ligero de ritmo y huellas de golpes, pensado para funcionar en navegador y en movil.
+
+## Estado Actual
+
+El proyecto esta preparado para uso local, pruebas en red Wi-Fi y publicacion estatica en GitHub Pages.
+
+Incluye:
+
+- Interfaz tipo app movil.
+- Modo usuario para escuchar, detectar, revisar resultados e historial.
+- Modo administracion para mantener la base de toques.
+- Biblioteca comun desde `assets/pasos`.
+- Cargas locales persistentes en el navegador.
+- Metadatos globales editables.
+- Calibracion automatica de deteccion segun los audios cargados.
+- Rechazo de silencio, ruido y coincidencias debiles.
+- Servidor HTTP local.
+- Servidor HTTPS local para pruebas con microfono en movil.
 - PWA basica con `manifest.webmanifest` y `sw.js`.
-- Avisos integrados tipo app, sin `alert()` nativos.
 
-## Estructura
+## Uso Rapido
 
-- `index.html`: interfaz principal.
-- `styles.css`: diseno visual y responsive.
-- `app.js`: estado, UI, captura de audio, almacenamiento y detector.
-- `audio-recorder-worklet.js`: captura de muestras con `AudioWorklet`.
-- `manifest.webmanifest`: metadatos PWA.
-- `sw.js`: cache PWA controlada.
-- `assets/pasos/`: biblioteca comun de audios.
-- `assets/pasos/manifest.json`: lista generada de referencias.
-- `assets/pasos/features.json`: huellas precomputadas.
-- `assets/pasos/calibration.json`: umbrales recomendados para esta biblioteca.
-- `assets/pasos/metadata.json`: nombres, etiquetas y notas globales.
-- `scripts/library_manifest.py`: generador de manifest y features.
-- `scripts/calibrate_detection.py`: analizador de biblioteca y generador de calibracion.
-- `scripts/serve_app.py`: servidor HTTP con API de administracion.
-- `scripts/serve_https.py`: servidor HTTPS local para pruebas con microfono en movil.
-- `tests/`: tests de generacion y saneamiento de biblioteca.
-- `docs/DETECTION.md`: detalle del metodo de deteccion.
-- `docs/AUDIT.md`: auditoria funcional, visual y de mantenimiento.
-- `ARCHITECTURE.md`: arquitectura y reglas de mantenimiento.
-
-## Ejecutar En Local
+Desde la carpeta del proyecto:
 
 ```bash
 python3 ./scripts/serve_app.py --host 0.0.0.0 --port 8000
 ```
 
-Abre en este ordenador:
+En este ordenador:
 
 ```text
 http://localhost:8000
 ```
 
-Abre desde un movil en la misma Wi-Fi:
+Desde un movil en la misma Wi-Fi:
 
 ```text
 http://IP-DE-TU-ORDENADOR:8000
 ```
 
-`localhost` y `127.0.0.1` solo sirven dentro del ordenador que ejecuta el servidor.
+Importante:
 
-## Administracion
+- `localhost` solo funciona en el propio ordenador.
+- Desde el movil hay que usar la IP del ordenador.
+- En algunos moviles el microfono puede requerir HTTPS.
 
-El modo administracion se valida en el servidor local. La clave por defecto es:
+## Requisitos
 
-```text
-psangorrin
-```
+Minimos:
 
-Para cambiarla sin tocar codigo:
+- Python 3.
+- Navegador moderno.
+- Permiso de microfono.
+
+Recomendados:
+
+- `ffmpeg`, para generar huellas de audio en servidor.
+- `gh`, si se quiere publicar o crear releases en GitHub desde terminal.
+
+Comprobar `ffmpeg`:
 
 ```bash
-COFRABEAT_ADMIN_PASSWORD="otra-clave" python3 ./scripts/serve_app.py --host 0.0.0.0 --port 8000
+ffmpeg -version
 ```
 
-### GitHub Pages
+Si `ffmpeg` no esta instalado, la app puede intentar analizar audios en navegador, pero la experiencia es peor y mas lenta.
 
-En GitHub Pages no hay backend Python ni endpoints `/api/admin/*`. Por eso la app permite abrir la seccion de administracion como demo publica, sin pedir contrasena.
+## Flujo Normal De Trabajo
 
-En esa version:
+1. Copiar los `mp3` de toques en `assets/pasos`.
+2. Arrancar el servidor local.
+3. El servidor regenera la biblioteca.
+4. La app carga los toques.
+5. El usuario pulsa el boton central para escuchar.
+6. La app analiza la captura.
+7. Si hay evidencia suficiente, muestra la deteccion.
+8. Si no hay evidencia suficiente, muestra que no hay toque fiable.
 
-- se puede ver la zona admin
-- se pueden probar filtros, fichas y organizacion
-- los cambios se guardan solo en el navegador del visitante
-- no se modifica `assets/pasos/metadata.json`
-- no se regenera `manifest.json` ni `features.json`
+Comando recomendado:
 
-Para administracion real y guardado global, usa `scripts/serve_app.py` en local o en un servidor propio.
+```bash
+python3 ./scripts/serve_app.py --host 0.0.0.0 --port 8000
+```
 
 ## Biblioteca De Toques
 
-### Base Comun
-
-Coloca los `mp3` en:
+La biblioteca comun vive en:
 
 ```text
 assets/pasos/
 ```
 
-Al arrancar `scripts/serve_app.py`, el servidor regenera:
+Aqui se deben poner los audios `mp3` que forman parte de la base de datos compartida de la app.
+
+Al arrancar el servidor, se generan o actualizan estos archivos:
 
 - `assets/pasos/manifest.json`
 - `assets/pasos/features.json`
 - `assets/pasos/calibration.json`
 
-Si `ffmpeg` esta instalado, las huellas se calculan en servidor. Si no esta disponible, la app mantiene fallback en navegador.
+### Diferencia Entre Biblioteca Comun Y Cargas Locales
 
-### Calibracion De Deteccion
+Biblioteca comun:
 
-Para que la app ajuste sus variables a los audios reales de tu biblioteca:
+- Archivos dentro de `assets/pasos`.
+- Los ve cualquier persona que entre a la app.
+- Se puede subir a GitHub junto con el proyecto.
+- Sirve como base real de deteccion.
+
+Cargas locales desde la interfaz:
+
+- Se guardan en `IndexedDB` del navegador.
+- Solo existen en ese dispositivo.
+- No las ve otro usuario.
+- No modifican la biblioteca comun del proyecto.
+
+Para que todos vean un toque, debe estar en `assets/pasos`.
+
+## Administracion
+
+El modo administracion permite:
+
+- Ver todos los toques cargados.
+- Buscar y filtrar referencias.
+- Escuchar audios.
+- Renombrar nombres visibles.
+- Asignar etiquetas.
+- Editar notas.
+- Revisar duracion, tamano, formato, muestreo y canales.
+- Contraer o expandir fichas.
+- Mantener la base comun desde el servidor local.
+
+Clave por defecto en servidor local:
+
+```text
+psangorrin
+```
+
+Cambiar clave sin tocar codigo:
+
+```bash
+COFRABEAT_ADMIN_PASSWORD="otra-clave" python3 ./scripts/serve_app.py --host 0.0.0.0 --port 8000
+```
+
+## GitHub Pages
+
+GitHub Pages es estatico. No ejecuta Python y no tiene endpoints `/api/admin/*`.
+
+Por eso, en GitHub Pages:
+
+- La zona de administracion se puede abrir como demo publica.
+- No pide contrasena.
+- Los cambios solo se guardan en el navegador del visitante.
+- No se modifica `assets/pasos/metadata.json`.
+- No se regeneran `manifest.json`, `features.json` ni `calibration.json`.
+
+Para administracion real y guardado global, hay que usar:
+
+```bash
+python3 ./scripts/serve_app.py --host 0.0.0.0 --port 8000
+```
+
+## Calibracion De Deteccion
+
+La calibracion sirve para que la app adapte sus valores de deteccion a los audios reales de la biblioteca.
+
+Ejecutar manualmente:
 
 ```bash
 python3 scripts/calibrate_detection.py
 ```
 
-Ese script analiza `assets/pasos/features.json` y genera:
+El script analiza los audios y genera:
 
 - `assets/pasos/calibration.json`
 - `docs/CALIBRATION.md`
 
-Al abrir la app por HTTP/HTTPS, CofraBeat carga `calibration.json` automaticamente y usa esos umbrales en la deteccion.
+La app carga `calibration.json` automaticamente al arrancar por HTTP o HTTPS.
 
-### Cargas Locales
+La calibracion ayuda a decidir:
 
-Los `mp3` subidos desde la interfaz se guardan en `IndexedDB` del navegador. Sirven para ese dispositivo, pero no se comparten con otros usuarios.
+- Si una grabacion tiene suficiente volumen.
+- Si hay suficientes golpes.
+- Si hay ritmo real.
+- Si hay suficientes fingerprints.
+- Si una coincidencia debe aceptarse o rechazarse.
+- Si ruido o silencio deben descartarse.
 
-## Detector
+Despues de cambiar mucho la biblioteca de audios, conviene regenerar la calibracion.
 
-El detector actual usa:
+## Como Funciona La Deteccion
 
-- energia RMS y pico maximo
-- envolvente de energia
-- fuerza de onset
-- picos ritmicos
-- fingerprints por intervalos entre golpes
-- comparacion por subsecuencia
-- votos de fingerprints alineados
-- filtro de calidad de captura
-- filtro de evidencia de coincidencia
+El detector analiza:
 
-Si la captura es ruido, silencio o no contiene suficiente patron de tambor, la app devuelve `Sin toque detectable` o `Sin deteccion fiable` y no muestra candidatos.
+- Energia RMS.
+- Pico maximo.
+- Envolvente de energia.
+- Fuerza de onset.
+- Picos ritmicos.
+- Tiempos entre golpes.
+- Fingerprints por intervalos.
+- Estabilidad ritmica.
+- Calidad global de senal.
+
+Luego compara la captura contra las referencias.
+
+La app no acepta automaticamente la referencia mas parecida. Primero exige evidencia minima. Esto evita falsos positivos con silencio, ruido o golpes sueltos.
+
+Resultados esperados:
+
+- Silencio: sin toque detectable.
+- Ruido: sin deteccion fiable.
+- Golpes aislados: normalmente sin deteccion fiable.
+- Toque real claro: deteccion si supera el umbral.
+- Toque real con mucho ruido: mejor no detectar antes que inventar una coincidencia.
+
+Mas detalle en:
+
+```text
+docs/DETECTION.md
+```
+
+## HTTPS Para Movil
+
+Algunos navegadores moviles bloquean el microfono si la web se abre por `http://IP:8000`.
+
+Para probar con HTTPS en red local:
+
+```bash
+chmod +x ./scripts/generate-dev-cert.sh
+./scripts/generate-dev-cert.sh IP-DE-TU-ORDENADOR
+python3 ./scripts/serve_https.py --host 0.0.0.0 --port 8443
+```
+
+Abrir desde el movil:
+
+```text
+https://IP-DE-TU-ORDENADOR:8443
+```
+
+El navegador puede mostrar aviso de certificado porque es un certificado local de desarrollo.
+
+## Estructura Del Proyecto
+
+- `index.html`: estructura principal de la app.
+- `styles.css`: diseno visual, responsive, movil y escritorio.
+- `app.js`: estado, interfaz, captura, almacenamiento y deteccion.
+- `audio-recorder-worklet.js`: captura de audio con `AudioWorklet`.
+- `manifest.webmanifest`: metadatos PWA.
+- `sw.js`: service worker y cache.
+- `assets/pasos/`: biblioteca comun de audios.
+- `assets/pasos/manifest.json`: lista generada de audios.
+- `assets/pasos/features.json`: huellas precomputadas.
+- `assets/pasos/calibration.json`: variables recomendadas de deteccion.
+- `assets/pasos/metadata.json`: nombres, etiquetas y notas.
+- `assets/icons/`: iconos de la app.
+- `scripts/library_manifest.py`: genera manifest y features.
+- `scripts/calibrate_detection.py`: genera calibracion e informe.
+- `scripts/serve_app.py`: servidor HTTP local con administracion.
+- `scripts/serve_https.py`: servidor HTTPS local.
+- `scripts/generate-dev-cert.sh`: certificado local para HTTPS.
+- `tests/`: pruebas automaticas.
+- `docs/DETECTION.md`: metodo de deteccion.
+- `docs/CALIBRATION.md`: informe de calibracion.
+- `docs/AUDIT.md`: auditorias realizadas.
+- `ARCHITECTURE.md`: arquitectura y reglas de mantenimiento.
 
 ## Validacion
+
+Ejecutar antes de subir cambios importantes:
 
 ```bash
 node --check app.js
@@ -161,62 +297,92 @@ python3 scripts/calibrate_detection.py
 python3 tests/run_tests.py
 ```
 
-Comprobacion CSS:
+Comprobacion rapida de CSS:
 
 ```bash
 python3 -c "from pathlib import Path; css=Path('styles.css').read_text(); print(css.count('{'), css.count('}'), 'ok' if css.count('{') == css.count('}') else 'mismatch')"
 ```
 
-## HTTPS Para Movil
+## Publicacion En GitHub
 
-Algunos navegadores moviles bloquean el microfono por HTTP cuando no es `localhost`. Para probar desde movil con HTTPS:
-
-```bash
-chmod +x ./scripts/generate-dev-cert.sh
-./scripts/generate-dev-cert.sh IP-DE-TU-ORDENADOR
-python3 ./scripts/serve_https.py --host 0.0.0.0 --port 8443
-```
-
-Luego abre:
+Repositorio:
 
 ```text
-https://IP-DE-TU-ORDENADOR:8443
+https://github.com/jesusgascon/PSGANGORRIN
 ```
 
-## GitHub
+Release actual:
 
-El proyecto incluye los `mp3` porque forman parte de la biblioteca comun. El tamano actual es razonable para GitHub. Si la biblioteca crece mucho, usar Git LFS.
+```text
+v1.0.0
+```
 
-Primer commit:
+Crear una release nueva:
 
 ```bash
-git init
-git add .
-git commit -m "Initial CofraBeat project"
+gh release create v1.0.1 --target main --title "CofraBeat v1.0.1" --notes "Notas de la version"
 ```
 
-Crear repositorio privado y subir:
+Ver releases:
 
 ```bash
-gh auth login
-gh repo create PSGANGORRIN --private --source=. --remote=origin --push
+gh release list
 ```
 
-Si el repositorio ya existe:
+## Archivos Locales Que No Se Suben
+
+El archivo `resume-codex.sh` es local y sirve para volver a una sesion concreta de Codex.
+
+Esta ignorado por Git:
+
+```text
+resume-codex.sh
+```
+
+No debe subirse nunca a GitHub.
+
+Tambien se ignoran:
+
+- certificados locales
+- `.env`
+- entornos virtuales
+- caches de Python
+- logs y temporales
+
+## Recuperar Sesion De Codex
+
+Si existe `resume-codex.sh`, se puede ejecutar:
 
 ```bash
-git remote add origin git@github.com:TU-USUARIO/PSGANGORRIN.git
-git branch -M main
-git push -u origin main
+./resume-codex.sh
 ```
+
+Ese script entra automaticamente en la carpeta del proyecto y ejecuta `codex resume` con el identificador de sesion guardado.
+
+El identificador de sesion puede cambiar si se empieza una conversacion nueva.
 
 ## Limitaciones
 
-No es un modelo de IA entrenado ni una implementacion completa de Shazam. Es un detector ritmico/fingerprint ligero que corre en navegador.
+La app esta pensada como detector ligero en navegador.
 
-Para una precision superior en procesiones reales, el siguiente paso seria:
+Limitaciones actuales:
 
-- crear un dataset propio con grabaciones reales de movil
-- medir falsos positivos y falsos negativos
-- usar MFCC, embeddings o DTW
-- entrenar un modelo con TensorFlow.js o mover el analisis a servidor
+- No es un modelo de IA entrenado.
+- La precision depende mucho de la calidad de los audios de referencia.
+- El microfono del movil, el ruido ambiente y la distancia al tambor afectan al resultado.
+- En GitHub Pages no hay administracion real ni guardado global.
+- Para bibliotecas muy grandes puede hacer falta optimizar o mover parte del analisis a servidor.
+
+## Siguientes Mejoras Posibles
+
+- Crear dataset propio con grabaciones reales desde movil.
+- Medir falsos positivos y falsos negativos con pruebas reales.
+- Mejorar comparacion con MFCC, DTW o embeddings.
+- Entrenar un modelo ligero con TensorFlow.js.
+- Crear backend real con usuarios y administracion segura.
+- Exportar e importar bibliotecas completas.
+- Preparar instalacion PWA mas completa.
+
+## Licencia Y Uso
+
+Proyecto creado para pruebas y desarrollo de una herramienta de Cofradias de Semana Santa. Revisar licencias de los audios antes de publicar o distribuir una biblioteca de toques.
