@@ -527,74 +527,22 @@ def compare_against_references(
     scored = []
 
     for reference in references:
-        reference_features = reference["features"]
-        reference_hop_seconds = reference_features.get("hopSeconds") or input_features["hopSeconds"]
-        target_window_length = max(
-            2,
-            round(input_features["durationSeconds"] / reference_hop_seconds),
-        )
-        rhythm_match = best_subsequence_match(
-            input_features["onsetSeries"],
-            reference_features["onsetSeries"],
-            None,
-            target_window_length,
-        )
-        envelope_match = best_subsequence_match(
-            input_features["envelopeSeries"],
-            reference_features["envelopeSeries"],
-            rhythm_match["offset"],
-            rhythm_match["windowLength"],
-        )
-        fingerprint_match = compare_rhythm_fingerprints(
-            input_features["fingerprints"],
-            reference_features["fingerprints"],
-        )
-
-        fingerprint_distance = 1 - fingerprint_match["similarity"]
-        rhythm_distance = 1 - rhythm_match["similarity"]
-        envelope_distance = 1 - envelope_match["similarity"]
-        interval_distance = vector_distance(input_features["intervals"], reference_features["intervals"])
-        density_distance = abs(input_features["density"] - reference_features["density"])
-        peaks_distance = abs(input_features["peakRate"] - reference_features["peakRate"]) / 8
-        tempo_distance = (
-            abs(input_features["tempoEstimate"] - reference_features["tempoEstimate"]) / 180
-            if input_features["tempoEstimate"] and reference_features["tempoEstimate"]
-            else 0.15
-        )
-        distance = (
-            fingerprint_distance * weights["fingerprint"]
-            + rhythm_distance * weights["rhythm"]
-            + envelope_distance * weights["envelope"]
-            + interval_distance * weights["interval"]
-            + density_distance * weights["density"]
-            + tempo_distance * weights["tempo"]
-            + peaks_distance * weights["peaks"]
-        )
-        absolute_similarity = clamp(1 - distance / 1.1, 0, 1)
-        evidence_score = estimate_match_evidence(
-            input_features,
-            rhythm_match,
-            fingerprint_match,
-            absolute_similarity,
-            limits,
-            mode_key,
-        )
-        signal_adjusted_similarity = absolute_similarity * clamp(input_features["signalQuality"], 0, 1) * evidence_score
+        variants = build_reference_feature_variants(reference)
         scored.append(
-            {
-                "reference": reference,
-                "distance": distance,
-                "absoluteSimilarity": absolute_similarity,
-                "signalAdjustedSimilarity": signal_adjusted_similarity,
-                "evidenceScore": evidence_score,
-                "alignment": {
-                    **rhythm_match,
-                    "fingerprintSimilarity": fingerprint_match["similarity"],
-                    "fingerprintOffsetSeconds": fingerprint_match["offsetSeconds"],
-                    "fingerprintVotes": fingerprint_match["votes"],
-                },
-                "confidence": 0,
-            }
+            min(
+                (
+                    score_reference_variant(
+                        input_features,
+                        reference,
+                        variant,
+                        weights,
+                        limits,
+                        mode_key,
+                    )
+                    for variant in variants
+                ),
+                key=lambda item: item["distance"],
+            )
         )
 
     scored.sort(key=lambda item: item["distance"])
@@ -612,6 +560,113 @@ def compare_against_references(
         matches.append(item)
     matches.sort(key=lambda item: (-item["confidence"], item["distance"]))
     return matches[:MATCHES_LIMIT]
+
+
+def build_reference_feature_variants(reference: dict) -> list[dict]:
+    variants = [
+        {
+            "type": "full",
+            "startSeconds": 0,
+            "durationSeconds": reference["features"].get("durationSeconds", 0),
+            "features": reference["features"],
+        }
+    ]
+    for segment in reference["features"].get("strongSegments", []) or []:
+        if isinstance(segment, dict) and isinstance(segment.get("features"), dict):
+            variants.append(
+                {
+                    "type": "segment",
+                    "startSeconds": segment.get("startSeconds", 0),
+                    "durationSeconds": segment.get("durationSeconds") or segment["features"].get("durationSeconds", 0),
+                    "score": segment.get("score", 0),
+                    "features": segment["features"],
+                }
+            )
+    return variants
+
+
+def score_reference_variant(
+    input_features: dict,
+    reference: dict,
+    variant: dict,
+    weights: dict,
+    limits: dict,
+    mode_key: str,
+) -> dict:
+    reference_features = variant["features"]
+    reference_hop_seconds = reference_features.get("hopSeconds") or input_features["hopSeconds"]
+    target_window_length = max(
+        2,
+        round(input_features["durationSeconds"] / reference_hop_seconds),
+    )
+    rhythm_match = best_subsequence_match(
+        input_features["onsetSeries"],
+        reference_features["onsetSeries"],
+        None,
+        target_window_length,
+    )
+    envelope_match = best_subsequence_match(
+        input_features["envelopeSeries"],
+        reference_features["envelopeSeries"],
+        rhythm_match["offset"],
+        rhythm_match["windowLength"],
+    )
+    fingerprint_match = compare_rhythm_fingerprints(
+        input_features["fingerprints"],
+        reference_features["fingerprints"],
+    )
+
+    fingerprint_distance = 1 - fingerprint_match["similarity"]
+    rhythm_distance = 1 - rhythm_match["similarity"]
+    envelope_distance = 1 - envelope_match["similarity"]
+    interval_distance = vector_distance(input_features["intervals"], reference_features["intervals"])
+    density_distance = abs(input_features["density"] - reference_features["density"])
+    peaks_distance = abs(input_features["peakRate"] - reference_features["peakRate"]) / 8
+    tempo_distance = (
+        abs(input_features["tempoEstimate"] - reference_features["tempoEstimate"]) / 180
+        if input_features["tempoEstimate"] and reference_features["tempoEstimate"]
+        else 0.15
+    )
+    distance = (
+        fingerprint_distance * weights["fingerprint"]
+        + rhythm_distance * weights["rhythm"]
+        + envelope_distance * weights["envelope"]
+        + interval_distance * weights["interval"]
+        + density_distance * weights["density"]
+        + tempo_distance * weights["tempo"]
+        + peaks_distance * weights["peaks"]
+    )
+    absolute_similarity = clamp(1 - distance / 1.1, 0, 1)
+    evidence_score = estimate_match_evidence(
+        input_features,
+        rhythm_match,
+        fingerprint_match,
+        absolute_similarity,
+        limits,
+        mode_key,
+    )
+    signal_adjusted_similarity = absolute_similarity * clamp(input_features["signalQuality"], 0, 1) * evidence_score
+    return {
+        "reference": reference,
+        "referenceFeatures": reference_features,
+        "referenceVariant": {
+            "type": variant["type"],
+            "startSeconds": variant.get("startSeconds", 0),
+            "durationSeconds": variant.get("durationSeconds", 0),
+            "score": variant.get("score", 0),
+        },
+        "distance": distance,
+        "absoluteSimilarity": absolute_similarity,
+        "signalAdjustedSimilarity": signal_adjusted_similarity,
+        "evidenceScore": evidence_score,
+        "alignment": {
+            **rhythm_match,
+            "fingerprintSimilarity": fingerprint_match["similarity"],
+            "fingerprintOffsetSeconds": fingerprint_match["offsetSeconds"],
+            "fingerprintVotes": fingerprint_match["votes"],
+        },
+        "confidence": 0,
+    }
 
 
 def estimate_match_evidence(
@@ -677,7 +732,7 @@ def get_match_ambiguity(
             and candidate["alignment"]["fingerprintVotes"]
             >= max(2, limit_for(limits, "minFingerprintVotes", mode_key) - 2)
         )
-        if margin < limit_for(limits, "minTopMatchMargin", mode_key) and candidate_is_plausible:
+        if margin <= limit_for(limits, "minTopMatchMargin", mode_key) and candidate_is_plausible:
             return candidate
     return None
 

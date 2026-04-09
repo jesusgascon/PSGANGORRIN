@@ -226,6 +226,8 @@ El detector analiza:
 
 Luego compara la captura contra las referencias.
 
+Cada referencia tiene una huella global y varios segmentos fuertes de 8, 10 y 12 segundos guardados en `assets/pasos/features.json`. Asi, una grabacion corta de microfono puede coincidir con la parte concreta del toque que se ha escuchado, no solo con el archivo completo.
+
 La app no acepta automaticamente la referencia mas parecida. Primero exige evidencia minima. Esto evita falsos positivos con silencio, ruido o golpes sueltos.
 
 Resultados esperados:
@@ -353,6 +355,8 @@ python3 scripts/analyze_capture.py /tmp/cofrabeat-mic-tests/*.wav --mode field
 Este comando sirve para pruebas de campo. Si el audio se grabo por microfono real, mostrara si la captura es usable, que tramo se ha elegido y que ranking obtiene.
 
 La captura real se limpia de forma suave antes de analizarla: se centra la senal, se reduce ruido bajo entre golpes y se evita subir artificialmente volumen a ruido debil.
+
+La comparacion usa la huella completa de cada toque y sus segmentos fuertes. Si dos toques quedan dentro del margen de ambiguedad, la app no confirma ninguno y pide repetir.
 
 Comprobacion rapida de CSS:
 

@@ -106,6 +106,10 @@ Esto evita que ruido bajo, silencio o audio ambiente pasen a la comparacion.
 - evidencia ponderada
 - confianza final
 
+Cada MP3 se compara usando su huella global y varios segmentos fuertes guardados en `assets/pasos/features.json`. Esos segmentos son ventanas de 8, 10 y 12 segundos elegidas por energia, golpes, fingerprints y calidad ritmica.
+
+Esto ayuda con capturas reales de microfono, porque el usuario normalmente graba solo una parte concreta del toque. Si un segmento fuerte encaja mejor que el archivo completo, la app usa ese segmento como mejor evidencia para esa referencia.
+
 La confianza se penaliza por calidad de senal y evidencia. Ya no se infla solo porque una referencia sea "la menos mala".
 
 ## Fase 4: Aceptacion
@@ -169,6 +173,6 @@ Con esas estadisticas propone variables como:
 - `minRhythmSimilarity`
 - `minTopMatchMargin`
 
-`minTopMatchMargin` evita confirmar un toque cuando el primer y segundo resultado quedan demasiado cerca. En ese caso la app muestra resultado ambiguo y pide repetir la escucha.
+`minTopMatchMargin` evita confirmar un toque cuando el primer y segundo resultado quedan demasiado cerca. Si la diferencia es menor o igual a ese margen, la app muestra resultado ambiguo y pide repetir la escucha.
 
 Regla practica: si aparecen falsos positivos, subir umbrales de evidencia. Si aparecen demasiados falsos negativos con toques reales claros, bajar ligeramente `minMatchEvidence` o `minRhythmicStability`. Si aparecen confusiones entre dos toques muy parecidos, subir ligeramente `minTopMatchMargin`.

@@ -28,7 +28,9 @@ FINGERPRINT_MAX_NEIGHBORS = 5
 FINGERPRINT_MAX_INTERVAL_SECONDS = 3.2
 FINGERPRINT_INTERVAL_STEP = 0.05
 FEATURE_SAMPLE_RATE = 22050
-FEATURE_SCHEMA_VERSION = 2
+FEATURE_SCHEMA_VERSION = 3
+REFERENCE_SEGMENT_SECONDS = (8, 10, 12)
+MAX_REFERENCE_SEGMENTS = 8
 REQUIRED_FEATURE_KEYS = {
     "schemaVersion",
     "fingerprintsCount",
@@ -36,6 +38,7 @@ REQUIRED_FEATURE_KEYS = {
     "onsetPeakMean",
     "rhythmicStability",
     "signalQuality",
+    "strongSegments",
 }
 
 
@@ -251,7 +254,7 @@ def decode_audio(file_path: Path) -> array:
     return pcm
 
 
-def analyse_samples(samples: array, sample_rate: int) -> dict:
+def analyse_samples(samples: array, sample_rate: int, include_segments: bool = True) -> dict:
     stats = measure_signal(samples)
     envelope = build_envelope(samples, stats["peak"])
     onset = build_onset_profile(envelope)
@@ -263,7 +266,7 @@ def analyse_samples(samples: array, sample_rate: int) -> dict:
     rhythmic_stability = estimate_rhythmic_stability(peak_times)
     fingerprints = build_rhythm_fingerprints(peak_times)
 
-    return {
+    features = {
         "schemaVersion": FEATURE_SCHEMA_VERSION,
         "envelope": round_values(resample_vector(envelope, ENVELOPE_BINS)),
         "onset": round_values(resample_vector(onset, ENVELOPE_BINS)),
@@ -295,6 +298,109 @@ def analyse_samples(samples: array, sample_rate: int) -> dict:
             6,
         ),
     }
+    if include_segments:
+        features["strongSegments"] = build_strong_segments(samples, sample_rate)
+    else:
+        features["strongSegments"] = []
+
+    return features
+
+
+def build_strong_segments(samples: array, sample_rate: int) -> list[dict]:
+    duration_seconds = len(samples) / sample_rate
+    if duration_seconds < min(REFERENCE_SEGMENT_SECONDS) + 2:
+        return []
+
+    frames = measure_energy_frames(samples, sample_rate)
+    centers = find_strong_segment_centers(frames)
+    centers.extend(find_distributed_segment_centers(samples, sample_rate))
+    segments = []
+    seen = set()
+
+    for center in centers:
+        for window_seconds in REFERENCE_SEGMENT_SECONDS:
+            start_seconds = max(0.0, min(center - window_seconds / 2, duration_seconds - window_seconds))
+            key = (round(start_seconds, 1), window_seconds)
+            if key in seen:
+                continue
+            seen.add(key)
+
+            start_sample = int(start_seconds * sample_rate)
+            end_sample = min(len(samples), int((start_seconds + window_seconds) * sample_rate))
+            if end_sample - start_sample < ANALYSIS_WINDOW:
+                continue
+
+            segment_features = analyse_samples(samples[start_sample:end_sample], sample_rate, include_segments=False)
+            if segment_features["fingerprintsCount"] < 4 or segment_features["peaksCount"] < 4:
+                continue
+
+            score = (
+                segment_features["signalQuality"] * 22
+                + segment_features["onsetContrast"] * 18
+                + min(18, segment_features["fingerprintsCount"] * 0.18)
+                + min(12, segment_features["peaksCount"] * 0.6)
+                + segment_features["rhythmicStability"] * 10
+            )
+            segments.append(
+                {
+                    "startSeconds": round(start_seconds, 3),
+                    "durationSeconds": round((end_sample - start_sample) / sample_rate, 3),
+                    "score": round(score, 6),
+                    "features": segment_features,
+                }
+            )
+
+    segments.sort(key=lambda item: item["score"], reverse=True)
+    selected = []
+    for segment in segments:
+        if all(abs(segment["startSeconds"] - existing["startSeconds"]) > 4 for existing in selected):
+            selected.append(segment)
+        if len(selected) >= MAX_REFERENCE_SEGMENTS:
+            break
+
+    return selected
+
+
+def measure_energy_frames(samples: array, sample_rate: int) -> list[dict]:
+    frame_size = max(ANALYSIS_WINDOW, round(sample_rate * 0.25))
+    hop_size = max(1, frame_size // 2)
+    frames = []
+    scale = 32768
+
+    for start in range(0, max(0, len(samples) - frame_size + 1), hop_size):
+        energy = 0.0
+        for sample in samples[start : start + frame_size]:
+            value = sample / scale
+            energy += value * value
+        frames.append(
+            {
+                "rms": (energy / frame_size) ** 0.5,
+                "centerSeconds": (start + frame_size / 2) / sample_rate,
+            }
+        )
+
+    return frames
+
+
+def find_strong_segment_centers(frames: list[dict]) -> list[float]:
+    ordered = sorted(frames, key=lambda item: item["rms"], reverse=True)
+    centers = []
+    for frame in ordered:
+        center = frame["centerSeconds"]
+        if all(abs(center - existing) > 6 for existing in centers):
+            centers.append(center)
+        if len(centers) >= MAX_REFERENCE_SEGMENTS:
+            break
+    return centers
+
+
+def find_distributed_segment_centers(samples: array, sample_rate: int) -> list[float]:
+    duration_seconds = len(samples) / sample_rate
+    if duration_seconds < 40:
+        return []
+
+    markers = (0.12, 0.28, 0.45, 0.62, 0.8)
+    return [duration_seconds * marker for marker in markers]
 
 
 def measure_signal(samples: array) -> dict:

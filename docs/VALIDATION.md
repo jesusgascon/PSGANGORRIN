@@ -48,6 +48,8 @@ python3 scripts/validate_detection.py --runs 400 --min-seconds 4 --max-seconds 1
 
 La app web tambien analiza varias ventanas activas dentro de cada escucha real. Por eso, si una grabacion de microfono incluye silencio al principio o eco al final, puede detectar usando solo el tramo mas util.
 
+La biblioteca guarda segmentos fuertes por cada MP3 dentro de `assets/pasos/features.json`. Durante la validacion, cada captura se compara contra la referencia completa y contra esos segmentos. Esto se parece mas a una escucha real, donde solo entra por el microfono una parte del toque.
+
 Hacer una prueba cruda totalmente aleatoria, incluyendo posibles silencios o partes sin golpes:
 
 ```bash
@@ -85,7 +87,7 @@ Cada bloque muestra:
 - la evidencia interna
 - el ranking de alternativas
 
-El validador separa los casos no confirmados:
+El validador separa los casos no confirmados. Si el segundo candidato queda dentro del margen de ambiguedad, incluso justo en el limite, no se confirma un ganador:
 
 - `OK`: la app confirmaria el toque correcto.
 - `AMBIGUO`: hay dos toques muy cercanos; la app no debe confirmar ninguno.
@@ -143,9 +145,9 @@ Ensayo de estres de 400 pruebas con fragmentos activos de 4 a 12 segundos:
 
 ```text
 Referencias validadas: 400
-Confirmadas correctas: 386
-Ambiguas no confirmadas: 10
-Correctas por debajo del umbral: 4
+Confirmadas correctas: 354
+Ambiguas no confirmadas: 46
+Correctas por debajo del umbral: 0
 Confusiones reales: 0
 Capturas no usables: 0
 ```
@@ -156,9 +158,9 @@ Ensayo del perfil `Micro real`:
 
 ```text
 Referencias validadas: 120
-Confirmadas correctas: 110
+Confirmadas correctas: 109
 Ambiguas no confirmadas: 10
-Correctas por debajo del umbral: 0
+Correctas por debajo del umbral: 1
 Confusiones reales: 0
 Capturas no usables: 0
 ```

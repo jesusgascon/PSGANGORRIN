@@ -37,6 +37,8 @@ const SUBSEQUENCE_STRIDE_DIVISOR = 18;
 const CAPTURE_FRAME_SECONDS = 0.12;
 const CAPTURE_WINDOW_SECONDS = [6, 8, 10, 12];
 const MAX_CAPTURE_CANDIDATES = 9;
+const REFERENCE_SEGMENT_SECONDS = [8, 10, 12];
+const MAX_REFERENCE_SEGMENTS = 8;
 const FINGERPRINT_MAX_NEIGHBORS = 5;
 const FINGERPRINT_MAX_INTERVAL_SECONDS = 3.2;
 const FINGERPRINT_INTERVAL_STEP = 0.05;
@@ -1688,7 +1690,7 @@ async function addReferenceFromArrayBuffer(arrayBuffer, metadata) {
   await ensureAudioContext();
   const buffer = await decodeAudioBufferWithTimeout(arrayBuffer);
   const mono = mixToMono(buffer);
-  const features = analyseSignal(mono, buffer.sampleRate);
+  const features = analyseSignal(mono, buffer.sampleRate, true);
   const existingIndex = state.references.findIndex(
     (reference) => reference.storageKey === metadata.storageKey,
   );
@@ -1798,7 +1800,7 @@ function flattenChunks(chunks) {
   return output;
 }
 
-function analyseSignal(signal, sampleRate) {
+function analyseSignal(signal, sampleRate, includeSegments = false) {
   const rawStats = measureSignal(signal);
   const normalized = normalizeSignal(signal);
   const envelope = buildEnvelope(normalized);
@@ -1815,7 +1817,7 @@ function analyseSignal(signal, sampleRate) {
   const onsetStats = measureOnsetProfile(onset, peakIndexes);
   const rhythmicStability = estimateRhythmicStability(peakTimes);
 
-  return {
+  const features = {
     envelope: resampleVector(envelope, ENVELOPE_BINS),
     onset: resampleVector(onset, ENVELOPE_BINS),
     envelopeSeries: [...envelope],
@@ -1843,6 +1845,107 @@ function analyseSignal(signal, sampleRate) {
       rhythmicStability,
     ),
   };
+
+  features.strongSegments = includeSegments ? buildStrongReferenceSegments(signal, sampleRate) : [];
+  return features;
+}
+
+function buildStrongReferenceSegments(signal, sampleRate) {
+  const durationSeconds = signal.length / sampleRate;
+  if (durationSeconds < Math.min(...REFERENCE_SEGMENT_SECONDS) + 2) {
+    return [];
+  }
+
+  const frames = measureReferenceEnergyFrames(signal, sampleRate);
+  const centers = findStrongReferenceCenters(frames);
+  centers.push(...findDistributedReferenceCenters(durationSeconds));
+  const segments = [];
+  const seen = new Set();
+
+  centers.forEach((centerSeconds) => {
+    REFERENCE_SEGMENT_SECONDS.forEach((windowSeconds) => {
+      const startSeconds = clamp(centerSeconds - windowSeconds / 2, 0, Math.max(0, durationSeconds - windowSeconds));
+      const key = `${startSeconds.toFixed(1)}:${windowSeconds}`;
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+
+      const startSample = Math.floor(startSeconds * sampleRate);
+      const endSample = Math.min(signal.length, Math.ceil((startSeconds + windowSeconds) * sampleRate));
+      if (endSample - startSample < ANALYSIS_WINDOW) {
+        return;
+      }
+
+      const features = analyseSignal(signal.slice(startSample, endSample), sampleRate, false);
+      if (features.fingerprintsCount < 4 || features.peaksCount < 4) {
+        return;
+      }
+
+      const score =
+        features.signalQuality * 22 +
+        features.onsetContrast * 18 +
+        Math.min(18, features.fingerprintsCount * 0.18) +
+        Math.min(12, features.peaksCount * 0.6) +
+        features.rhythmicStability * 10;
+
+      segments.push({
+        startSeconds,
+        durationSeconds: (endSample - startSample) / sampleRate,
+        score,
+        features,
+      });
+    });
+  });
+
+  segments.sort((left, right) => right.score - left.score);
+  const selected = [];
+  segments.forEach((segment) => {
+    if (selected.every((item) => Math.abs(item.startSeconds - segment.startSeconds) > 4)) {
+      selected.push(segment);
+    }
+  });
+
+  return selected.slice(0, MAX_REFERENCE_SEGMENTS);
+}
+
+function measureReferenceEnergyFrames(signal, sampleRate) {
+  const frameSize = Math.max(ANALYSIS_WINDOW, Math.round(sampleRate * 0.25));
+  const hopSize = Math.max(1, Math.floor(frameSize / 2));
+  const frames = [];
+
+  for (let start = 0; start + frameSize <= signal.length; start += hopSize) {
+    let energy = 0;
+    for (let index = start; index < start + frameSize; index += 1) {
+      const value = signal[index];
+      energy += value * value;
+    }
+    frames.push({
+      rms: Math.sqrt(energy / frameSize),
+      centerSeconds: (start + frameSize / 2) / sampleRate,
+    });
+  }
+
+  return frames;
+}
+
+function findStrongReferenceCenters(frames) {
+  const ordered = [...frames].sort((left, right) => right.rms - left.rms);
+  const centers = [];
+  ordered.forEach((frame) => {
+    if (centers.every((center) => Math.abs(center - frame.centerSeconds) > 6)) {
+      centers.push(frame.centerSeconds);
+    }
+  });
+  return centers.slice(0, MAX_REFERENCE_SEGMENTS);
+}
+
+function findDistributedReferenceCenters(durationSeconds) {
+  if (durationSeconds < 40) {
+    return [];
+  }
+
+  return [0.12, 0.28, 0.45, 0.62, 0.8].map((marker) => durationSeconds * marker);
 }
 
 function prepareCaptureSignalForAnalysis(signal) {
@@ -2374,69 +2477,10 @@ function compareAgainstReferences(inputFeatures, references, modeKey) {
     (reference) => reference.analysisStatus === "ready" && reference.features,
   );
   const scored = readyReferences.map((reference) => {
-    const referenceHopSeconds = reference.features.hopSeconds || inputFeatures.hopSeconds || 0.023;
-    const targetWindowLength = Math.max(2, Math.round(inputFeatures.durationSeconds / referenceHopSeconds));
-    const rhythmMatch = bestSubsequenceMatch(
-      inputFeatures.onsetSeries,
-      reference.features.onsetSeries,
-      null,
-      targetWindowLength,
-    );
-    const envelopeMatch = bestSubsequenceMatch(
-      inputFeatures.envelopeSeries,
-      reference.features.envelopeSeries,
-      rhythmMatch.offset,
-      rhythmMatch.windowLength,
-    );
-    const fingerprintMatch = compareRhythmFingerprints(
-      inputFeatures.fingerprints,
-      reference.features.fingerprints,
-    );
-    const fingerprintDistance = 1 - fingerprintMatch.similarity;
-    const rhythmDistance = 1 - rhythmMatch.similarity;
-    const envelopeDistance = 1 - envelopeMatch.similarity;
-    const intervalDistance = vectorDistance(inputFeatures.intervals, reference.features.intervals);
-    const densityDistance = Math.abs(inputFeatures.density - reference.features.density);
-    const peaksDistance = Math.abs(inputFeatures.peakRate - reference.features.peakRate) / 8;
-    const tempoDistance =
-      inputFeatures.tempoEstimate && reference.features.tempoEstimate
-        ? Math.abs(inputFeatures.tempoEstimate - reference.features.tempoEstimate) / 180
-        : 0.15;
-
-    const weights = preset.weights;
-    const distance =
-      fingerprintDistance * weights.fingerprint +
-      rhythmDistance * weights.rhythm +
-      envelopeDistance * weights.envelope +
-      intervalDistance * weights.interval +
-      densityDistance * weights.density +
-      tempoDistance * weights.tempo +
-      peaksDistance * weights.peaks;
-    const absoluteSimilarity = clamp(1 - distance / 1.1, 0, 1);
-    const evidenceScore = estimateMatchEvidence(
-      inputFeatures,
-      rhythmMatch,
-      fingerprintMatch,
-      absoluteSimilarity,
-      modeKey,
-    );
-    const signalAdjustedSimilarity =
-      absoluteSimilarity * clamp(inputFeatures.signalQuality, 0, 1) * evidenceScore;
-
-    return {
-      reference,
-      distance,
-      absoluteSimilarity,
-      signalAdjustedSimilarity,
-      evidenceScore,
-      alignment: {
-        ...rhythmMatch,
-        fingerprintSimilarity: fingerprintMatch.similarity,
-        fingerprintOffsetSeconds: fingerprintMatch.offsetSeconds,
-        fingerprintVotes: fingerprintMatch.votes,
-      },
-      confidence: 0,
-    };
+    const variants = buildReferenceFeatureVariants(reference);
+    return variants
+      .map((variant) => scoreReferenceVariant(inputFeatures, reference, variant, preset, modeKey))
+      .sort((left, right) => left.distance - right.distance)[0];
   });
 
   scored.sort((left, right) => left.distance - right.distance);
@@ -2456,6 +2500,109 @@ function compareAgainstReferences(inputFeatures, references, modeKey) {
   });
   matches.sort((left, right) => right.confidence - left.confidence || left.distance - right.distance);
   return matches.slice(0, MATCHES_LIMIT);
+}
+
+function buildReferenceFeatureVariants(reference) {
+  const variants = [
+    {
+      type: "full",
+      startSeconds: 0,
+      durationSeconds: reference.features.durationSeconds,
+      features: reference.features,
+    },
+  ];
+  const segments = Array.isArray(reference.features.strongSegments)
+    ? reference.features.strongSegments
+    : [];
+
+  segments.forEach((segment) => {
+    if (!segment?.features) {
+      return;
+    }
+    variants.push({
+      type: "segment",
+      startSeconds: segment.startSeconds || 0,
+      durationSeconds: segment.durationSeconds || segment.features.durationSeconds || 0,
+      score: segment.score || 0,
+      features: segment.features,
+    });
+  });
+
+  return variants;
+}
+
+function scoreReferenceVariant(inputFeatures, reference, variant, preset, modeKey) {
+  const referenceFeatures = variant.features;
+  const referenceHopSeconds = referenceFeatures.hopSeconds || inputFeatures.hopSeconds || 0.023;
+  const targetWindowLength = Math.max(2, Math.round(inputFeatures.durationSeconds / referenceHopSeconds));
+  const rhythmMatch = bestSubsequenceMatch(
+    inputFeatures.onsetSeries,
+    referenceFeatures.onsetSeries,
+    null,
+    targetWindowLength,
+  );
+  const envelopeMatch = bestSubsequenceMatch(
+    inputFeatures.envelopeSeries,
+    referenceFeatures.envelopeSeries,
+    rhythmMatch.offset,
+    rhythmMatch.windowLength,
+  );
+  const fingerprintMatch = compareRhythmFingerprints(
+    inputFeatures.fingerprints,
+    referenceFeatures.fingerprints,
+  );
+  const fingerprintDistance = 1 - fingerprintMatch.similarity;
+  const rhythmDistance = 1 - rhythmMatch.similarity;
+  const envelopeDistance = 1 - envelopeMatch.similarity;
+  const intervalDistance = vectorDistance(inputFeatures.intervals, referenceFeatures.intervals);
+  const densityDistance = Math.abs(inputFeatures.density - referenceFeatures.density);
+  const peaksDistance = Math.abs(inputFeatures.peakRate - referenceFeatures.peakRate) / 8;
+  const tempoDistance =
+    inputFeatures.tempoEstimate && referenceFeatures.tempoEstimate
+      ? Math.abs(inputFeatures.tempoEstimate - referenceFeatures.tempoEstimate) / 180
+      : 0.15;
+
+  const weights = preset.weights;
+  const distance =
+    fingerprintDistance * weights.fingerprint +
+    rhythmDistance * weights.rhythm +
+    envelopeDistance * weights.envelope +
+    intervalDistance * weights.interval +
+    densityDistance * weights.density +
+    tempoDistance * weights.tempo +
+    peaksDistance * weights.peaks;
+  const absoluteSimilarity = clamp(1 - distance / 1.1, 0, 1);
+  const evidenceScore = estimateMatchEvidence(
+    inputFeatures,
+    rhythmMatch,
+    fingerprintMatch,
+    absoluteSimilarity,
+    modeKey,
+  );
+  const signalAdjustedSimilarity =
+    absoluteSimilarity * clamp(inputFeatures.signalQuality, 0, 1) * evidenceScore;
+
+  return {
+    reference,
+    referenceFeatures,
+    referenceVariant: {
+      type: variant.type,
+      startSeconds: variant.startSeconds,
+      durationSeconds: variant.durationSeconds,
+      score: variant.score || 0,
+    },
+    distance,
+    absoluteSimilarity,
+    signalAdjustedSimilarity,
+    evidenceScore,
+    alignment: {
+      ...rhythmMatch,
+      fingerprintSimilarity: fingerprintMatch.similarity,
+      fingerprintOffsetSeconds: fingerprintMatch.offsetSeconds,
+      fingerprintVotes: fingerprintMatch.votes,
+    },
+    confidence: 0,
+  };
 }
 
 function estimateMatchEvidence(inputFeatures, rhythmMatch, fingerprintMatch, absoluteSimilarity, modeKey) {
@@ -2512,7 +2659,7 @@ function getMatchAmbiguity(matches, modeKey = state.settings.analysisMode) {
       candidate.evidenceScore >= detectionLimit("minMatchEvidence", modeKey) &&
       candidate.alignment.fingerprintVotes >= Math.max(2, detectionLimit("minFingerprintVotes", modeKey) - 2);
 
-    return margin < minimumMargin && candidateIsPlausible;
+    return margin <= minimumMargin && candidateIsPlausible;
   }) || null;
 }
 
@@ -3142,9 +3289,11 @@ function updateResult({ name, meta, confidence, matches, analysis }) {
 }
 
 function formatMatchMeta(match, analysis) {
-  const tempo = Math.round(match.reference.features.tempoEstimate || 0);
+  const matchedFeatures = match.referenceFeatures || match.reference.features;
+  const tempo = Math.round(matchedFeatures.tempoEstimate || match.reference.features.tempoEstimate || 0);
   const captured = Math.round(analysis?.tempoEstimate || 0);
-  const offsetSeconds = (match.alignment?.offset || 0) * (match.reference.features.hopSeconds || 0);
+  const variantStart = match.referenceVariant?.startSeconds || 0;
+  const offsetSeconds = variantStart + (match.alignment?.offset || 0) * (matchedFeatures.hopSeconds || 0);
   const fragmentText = offsetSeconds > 1
     ? ` Fragmento parecido sobre ${formatDuration(offsetSeconds)} de la referencia.`
     : "";

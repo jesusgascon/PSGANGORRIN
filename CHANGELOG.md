@@ -11,6 +11,8 @@
 - Analisis por tramos activos dentro de la captura para mejorar escuchas reales con silencio, eco o ruido de sala.
 - Nuevo script `scripts/analyze_capture.py` para analizar WAV/MP3 reales grabados con microfono o monitor del sistema.
 - Preprocesado suave de capturas reales: centrado DC y puerta de ruido ligera sin amplificar ruido debil.
+- Huellas por segmentos fuertes de cada MP3 para comparar capturas reales contra la parte mas representativa de cada toque.
+- Ambiguedad mas estricta: si otro toque queda justo en el margen de seguridad, la app pide repetir en vez de confirmar.
 
 ## v1.1.0
 

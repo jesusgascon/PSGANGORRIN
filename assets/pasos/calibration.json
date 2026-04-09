@@ -1,24 +1,23 @@
 {
-  "generatedAt": "2026-04-09T12:54:21.909606+00:00",
+  "generatedAt": "2026-04-09T17:10:46.813186+00:00",
   "source": "scripts/calibrate_detection.py",
   "references": 20,
   "recommendedLimits": {
     "minOnsetThreshold": 0.18,
-    "minSignalRms": 0.012,
-    "minSignalPeak": 0.045,
+    "minSignalRms": 0.035,
+    "minSignalPeak": 0.12,
     "minPeakRate": 0.35,
     "minCapturePeaks": 3,
     "minMatchConfidence": 28,
-    "minSignalQuality": 0.3,
-    "minOnsetContrast": 0.08,
-    "minCaptureFingerprints": 3,
-    "minRhythmicStability": 0.1,
+    "minSignalQuality": 0.447761,
+    "minOnsetContrast": 0.097155,
+    "minCaptureFingerprints": 5,
+    "minRhythmicStability": 0.16369,
     "minMatchAbsoluteSimilarity": 0.38,
     "minMatchEvidence": 0.42,
-    "minFingerprintVotes": 3,
+    "minFingerprintVotes": 4,
     "minFingerprintSimilarity": 0.08,
-    "minRhythmSimilarity": 0.36,
-    "minTopMatchMargin": 5
+    "minRhythmSimilarity": 0.36
   },
   "statistics": {
     "durationSeconds": {

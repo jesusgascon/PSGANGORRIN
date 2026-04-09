@@ -1,4 +1,4 @@
-const CACHE_NAME = "cofrabeat-v10";
+const CACHE_NAME = "cofrabeat-v11";
 const APP_ASSETS = [
   "./",
   "./index.html",
