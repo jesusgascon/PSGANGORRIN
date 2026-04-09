@@ -2,9 +2,9 @@
 
 Aplicacion web mobile-first para detectar toques de tambor de Semana Santa. La app escucha por el microfono, analiza el ritmo grabado y lo compara contra una biblioteca comun de audios `mp3`.
 
-Version actual: `v1.0.0`
+Version actual: `v1.1.0`
 
-Release: <https://github.com/jesusgascon/PSGANGORRIN/releases/tag/v1.0.0>
+Release: <https://github.com/jesusgascon/PSGANGORRIN/releases/tag/v1.1.0>
 
 ## Que Es
 
@@ -16,6 +16,7 @@ CofraBeat es una herramienta para Cofradias y proyectos de Semana Santa que perm
 - Consultar un ranking de coincidencias cuando la evidencia es suficiente.
 - Mantener una biblioteca comun de audios de referencia.
 - Administrar nombres visibles, etiquetas, notas y metadatos de cada toque.
+- Escuchar previas en administracion sin que sigan sonando al salir de la zona admin.
 
 No es una IA entrenada ni una copia completa de Shazam. Es un detector ligero de ritmo y huellas de golpes, pensado para funcionar en navegador y en movil.
 
@@ -32,6 +33,7 @@ Incluye:
 - Cargas locales persistentes en el navegador.
 - Metadatos globales editables.
 - Calibracion automatica de deteccion segun los audios cargados.
+- Ensayos simulados repetidos para comprobar la deteccion.
 - Rechazo de silencio, ruido y coincidencias debiles.
 - Servidor HTTP local.
 - Servidor HTTPS local para pruebas con microfono en movil.
@@ -147,6 +149,7 @@ El modo administracion permite:
 - Editar notas.
 - Revisar duracion, tamano, formato, muestreo y canales.
 - Contraer o expandir fichas.
+- Parar automaticamente las previas al salir de administracion o cambiar de panel.
 - Mantener la base comun desde el servidor local.
 
 Clave por defecto en servidor local:
@@ -284,6 +287,7 @@ El navegador puede mostrar aviso de certificado porque es un certificado local d
 - `docs/CALIBRATION.md`: informe de calibracion.
 - `docs/VALIDATION.md`: como simular y validar detecciones.
 - `docs/AUDIT.md`: auditorias realizadas.
+- `CHANGELOG.md`: historial de versiones.
 - `ARCHITECTURE.md`: arquitectura y reglas de mantenimiento.
 
 ## Validacion
@@ -343,7 +347,7 @@ https://github.com/jesusgascon/PSGANGORRIN
 Release actual:
 
 ```text
-v1.0.0
+v1.1.0
 ```
 
 Crear una release nueva:
