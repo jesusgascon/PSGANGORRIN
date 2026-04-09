@@ -38,8 +38,10 @@ Prototipo funcional preparado para uso local y pruebas en red Wi-Fi:
 - `assets/pasos/`: biblioteca comun de audios.
 - `assets/pasos/manifest.json`: lista generada de referencias.
 - `assets/pasos/features.json`: huellas precomputadas.
+- `assets/pasos/calibration.json`: umbrales recomendados para esta biblioteca.
 - `assets/pasos/metadata.json`: nombres, etiquetas y notas globales.
 - `scripts/library_manifest.py`: generador de manifest y features.
+- `scripts/calibrate_detection.py`: analizador de biblioteca y generador de calibracion.
 - `scripts/serve_app.py`: servidor HTTP con API de administracion.
 - `scripts/serve_https.py`: servidor HTTPS local para pruebas con microfono en movil.
 - `tests/`: tests de generacion y saneamiento de biblioteca.
@@ -109,8 +111,24 @@ Al arrancar `scripts/serve_app.py`, el servidor regenera:
 
 - `assets/pasos/manifest.json`
 - `assets/pasos/features.json`
+- `assets/pasos/calibration.json`
 
 Si `ffmpeg` esta instalado, las huellas se calculan en servidor. Si no esta disponible, la app mantiene fallback en navegador.
+
+### Calibracion De Deteccion
+
+Para que la app ajuste sus variables a los audios reales de tu biblioteca:
+
+```bash
+python3 scripts/calibrate_detection.py
+```
+
+Ese script analiza `assets/pasos/features.json` y genera:
+
+- `assets/pasos/calibration.json`
+- `docs/CALIBRATION.md`
+
+Al abrir la app por HTTP/HTTPS, CofraBeat carga `calibration.json` automaticamente y usa esos umbrales en la deteccion.
 
 ### Cargas Locales
 
@@ -138,7 +156,8 @@ Si la captura es ruido, silencio o no contiene suficiente patron de tambor, la a
 node --check app.js
 node --check sw.js
 node --check audio-recorder-worklet.js
-python3 -m py_compile scripts/library_manifest.py scripts/serve_app.py scripts/serve_https.py tests/test_library_manifest.py tests/run_tests.py
+python3 -m py_compile scripts/library_manifest.py scripts/calibrate_detection.py scripts/serve_app.py scripts/serve_https.py tests/test_library_manifest.py tests/test_detection_calibration.py tests/run_tests.py
+python3 scripts/calibrate_detection.py
 python3 tests/run_tests.py
 ```
 

@@ -80,21 +80,44 @@ Si no se cumple, la app devuelve `Sin deteccion fiable` y no muestra ranking.
 - Toque real con micro cerca: deteccion si supera evidencia suficiente.
 - Toque real con mucho ruido: no concluyente antes que falso positivo.
 
-## Parametros Sensibles
+## Calibracion Automatica
 
-Los umbrales estan al principio de `app.js`:
+Los valores por defecto estan en `DEFAULT_DETECTION_LIMITS` dentro de `app.js`, pero la app puede cargar valores ajustados desde:
 
-- `MIN_SIGNAL_RMS`
-- `MIN_SIGNAL_PEAK`
-- `MIN_CAPTURE_PEAKS`
-- `MIN_SIGNAL_QUALITY`
-- `MIN_ONSET_CONTRAST`
-- `MIN_CAPTURE_FINGERPRINTS`
-- `MIN_RHYTHMIC_STABILITY`
-- `MIN_MATCH_ABSOLUTE_SIMILARITY`
-- `MIN_MATCH_EVIDENCE`
-- `MIN_FINGERPRINT_VOTES`
-- `MIN_FINGERPRINT_SIMILARITY`
-- `MIN_RHYTHM_SIMILARITY`
+```text
+assets/pasos/calibration.json
+```
 
-Regla practica: si aparecen falsos positivos, subir umbrales de evidencia. Si aparecen demasiados falsos negativos con toques reales claros, bajar ligeramente `MIN_MATCH_EVIDENCE` o `MIN_RHYTHMIC_STABILITY`.
+Ese archivo se genera con:
+
+```bash
+python3 scripts/calibrate_detection.py
+```
+
+El script analiza las referencias actuales de `assets/pasos/features.json` y calcula:
+
+- duracion real
+- RMS y pico
+- golpes detectados
+- golpes por segundo
+- fingerprints ritmicos
+- contraste de onset
+- estabilidad ritmica
+- calidad global
+
+Con esas estadisticas propone variables como:
+
+- `minSignalRms`
+- `minSignalPeak`
+- `minCapturePeaks`
+- `minSignalQuality`
+- `minOnsetContrast`
+- `minCaptureFingerprints`
+- `minRhythmicStability`
+- `minMatchAbsoluteSimilarity`
+- `minMatchEvidence`
+- `minFingerprintVotes`
+- `minFingerprintSimilarity`
+- `minRhythmSimilarity`
+
+Regla practica: si aparecen falsos positivos, subir umbrales de evidencia. Si aparecen demasiados falsos negativos con toques reales claros, bajar ligeramente `minMatchEvidence` o `minRhythmicStability`.

@@ -28,6 +28,15 @@ FINGERPRINT_MAX_NEIGHBORS = 5
 FINGERPRINT_MAX_INTERVAL_SECONDS = 3.2
 FINGERPRINT_INTERVAL_STEP = 0.05
 FEATURE_SAMPLE_RATE = 22050
+FEATURE_SCHEMA_VERSION = 2
+REQUIRED_FEATURE_KEYS = {
+    "schemaVersion",
+    "fingerprintsCount",
+    "onsetContrast",
+    "onsetPeakMean",
+    "rhythmicStability",
+    "signalQuality",
+}
 
 
 def prettify_name(filename: str) -> str:
@@ -171,7 +180,7 @@ def write_features(project_root: Path) -> Path | None:
             previous
             and previous.get("size") == entry["size"]
             and previous.get("modifiedAt") == entry["modifiedAt"]
-            and previous.get("features")
+            and has_required_features(previous.get("features"))
         ):
             references.append({**previous, **entry})
             continue
@@ -197,6 +206,14 @@ def read_existing_features(features_path: Path) -> dict:
         return json.loads(features_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return {"references": []}
+
+
+def has_required_features(features: object) -> bool:
+    return (
+        isinstance(features, dict)
+        and features.get("schemaVersion") == FEATURE_SCHEMA_VERSION
+        and REQUIRED_FEATURE_KEYS.issubset(features.keys())
+    )
 
 
 def analyse_audio_file(file_path: Path) -> dict:
@@ -242,8 +259,12 @@ def analyse_samples(samples: array, sample_rate: int) -> dict:
     hop_seconds = (ANALYSIS_WINDOW / 2) / sample_rate
     peak_times = [index * hop_seconds for index in peak_indexes]
     peak_rate = len(peak_indexes) / max(0.1, len(samples) / sample_rate)
+    onset_profile = measure_onset_profile(onset, peak_indexes)
+    rhythmic_stability = estimate_rhythmic_stability(peak_times)
+    fingerprints = build_rhythm_fingerprints(peak_times)
 
     return {
+        "schemaVersion": FEATURE_SCHEMA_VERSION,
         "envelope": round_values(resample_vector(envelope, ENVELOPE_BINS)),
         "onset": round_values(resample_vector(onset, ENVELOPE_BINS)),
         "envelopeSeries": round_values(envelope),
@@ -254,12 +275,25 @@ def analyse_samples(samples: array, sample_rate: int) -> dict:
         "tempoEstimate": round(estimate_tempo(peak_indexes, sample_rate), 3),
         "peaksCount": len(peak_indexes),
         "peakTimes": round_values(peak_times),
-        "fingerprints": build_rhythm_fingerprints(peak_times),
+        "fingerprints": fingerprints,
+        "fingerprintsCount": len(fingerprints),
+        "onsetContrast": round(onset_profile["contrast"], 6),
+        "onsetPeakMean": round(onset_profile["peak_mean"], 6),
+        "rhythmicStability": round(rhythmic_stability, 6),
         "durationSeconds": round(len(samples) / sample_rate, 3),
         "hopSeconds": round(hop_seconds, 6),
         "rms": round(stats["rms"], 6),
         "peakAmplitude": round(stats["peak"], 6),
-        "signalQuality": round(estimate_signal_quality(stats, len(peak_indexes), peak_rate), 6),
+        "signalQuality": round(
+            estimate_signal_quality(
+                stats,
+                len(peak_indexes),
+                peak_rate,
+                onset_profile["contrast"],
+                rhythmic_stability,
+            ),
+            6,
+        ),
     }
 
 
@@ -378,16 +412,66 @@ def build_rhythm_fingerprints(peak_times: list[float]) -> list[dict]:
     return fingerprints
 
 
+def measure_onset_profile(onset: list[float], peak_indexes: list[int]) -> dict:
+    if not onset:
+        return {"contrast": 0.0, "peak_mean": 0.0}
+
+    peak_values = [onset[index] for index in peak_indexes if 0 <= index < len(onset)]
+    sorted_values = sorted(onset)
+    median = sorted_values[int(len(sorted_values) * 0.5)] if sorted_values else 0.0
+    p90 = sorted_values[int(len(sorted_values) * 0.9)] if sorted_values else 0.0
+    peak_mean = sum(peak_values) / len(peak_values) if peak_values else 0.0
+    contrast = clamp(max(p90, peak_mean) - median, 0.0, 1.0)
+    return {"contrast": contrast, "peak_mean": peak_mean}
+
+
+def estimate_rhythmic_stability(peak_times: list[float]) -> float:
+    if len(peak_times) < 4:
+        return 0.0
+
+    intervals = []
+    for index in range(1, len(peak_times)):
+        interval = peak_times[index] - peak_times[index - 1]
+        if 0.06 < interval < 2.4:
+            intervals.append(interval)
+    if len(intervals) < 3:
+        return 0.0
+
+    intervals = sorted(intervals)
+    median = intervals[len(intervals) // 2]
+    if not median:
+        return 0.0
+
+    deviations = sorted(abs(interval - median) for interval in intervals)
+    median_deviation = deviations[len(deviations) // 2] if deviations else 0.0
+    return clamp(1 - median_deviation / max(0.08, median * 0.9), 0.0, 1.0)
+
+
 def quantize_interval(seconds: float) -> int:
     return max(1, round(seconds / FINGERPRINT_INTERVAL_STEP))
 
 
-def estimate_signal_quality(stats: dict, peaks_count: int, peak_rate: float) -> float:
+def estimate_signal_quality(
+    stats: dict,
+    peaks_count: int,
+    peak_rate: float,
+    onset_contrast: float,
+    rhythmic_stability: float,
+) -> float:
     rms_score = clamp(stats["rms"] / 0.08, 0, 1)
     peak_score = clamp(stats["peak"] / 0.35, 0, 1)
     rhythm_score = clamp(peaks_count / 8, 0, 1)
     rate_score = clamp(peak_rate / 3, 0, 1)
-    return rms_score * 0.35 + peak_score * 0.25 + rhythm_score * 0.25 + rate_score * 0.15
+    contrast_score = clamp(onset_contrast / 0.28, 0, 1)
+    stability_score = clamp(rhythmic_stability, 0, 1)
+    return (
+        rms_score * 0.22
+        + peak_score * 0.18
+        + rhythm_score * 0.18
+        + rate_score * 0.12
+        + contrast_score * 0.18
+        + stability_score * 0.12
+    )
 
 
 def resample_vector(vector: list[float], target_size: int) -> list[float]:

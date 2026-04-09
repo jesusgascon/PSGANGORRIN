@@ -5,13 +5,14 @@
 1. El servidor escanea `assets/pasos`.
 2. Genera `manifest.json` con la lista de audios.
 3. Genera `features.json` con huellas ritmicas precomputadas si `ffmpeg` esta disponible.
-4. La app carga primero `features.json`.
-5. Si faltan huellas para algun audio, la app decodifica ese `mp3` en el navegador como fallback.
-6. El usuario pulsa `Escuchar`.
-7. La app captura muestras con `AudioWorklet`.
-8. El detector valida si la captura contiene un patron de tambor usable.
-9. Si la captura es usable, compara contra referencias listas.
-10. Solo acepta una deteccion si supera evidencia minima de similitud, fingerprints y confianza.
+4. `scripts/calibrate_detection.py` puede generar `calibration.json` con umbrales ajustados.
+5. La app carga primero `calibration.json` y despues `features.json`.
+6. Si faltan huellas para algun audio, la app decodifica ese `mp3` en el navegador como fallback.
+7. El usuario pulsa `Escuchar`.
+8. La app captura muestras con `AudioWorklet`.
+9. El detector valida si la captura contiene un patron de tambor usable.
+10. Si la captura es usable, compara contra referencias listas.
+11. Solo acepta una deteccion si supera evidencia minima de similitud, fingerprints y confianza.
 
 ## Modulos
 
@@ -20,6 +21,7 @@
 - `app.js`: aplicacion principal.
 - `audio-recorder-worklet.js`: captura de audio de baja latencia.
 - `scripts/library_manifest.py`: escaneo de mp3, metadatos y huellas.
+- `scripts/calibrate_detection.py`: analisis de biblioteca y umbrales recomendados.
 - `scripts/serve_app.py`: servidor HTTP, API admin y regeneracion de biblioteca.
 - `scripts/serve_https.py`: servidor HTTPS local.
 - `sw.js`: service worker con cache controlada.
@@ -31,6 +33,7 @@
 - `IndexedDB`: audios subidos localmente desde el navegador.
 - `assets/pasos/manifest.json`: biblioteca comun generada.
 - `assets/pasos/features.json`: huellas comunes generadas.
+- `assets/pasos/calibration.json`: umbrales generados para la biblioteca comun.
 - `assets/pasos/metadata.json`: nombres, etiquetas y notas globales.
 
 ## Modo GitHub Pages
@@ -84,6 +87,7 @@ Si una captura no supera las fases 2 o 3, se muestra `Sin toque detectable` o `S
 - No volver a `window.alert()` para errores de UI; usar toast/modal integrado.
 - Mantener GitHub Pages como demo estatica sin guardado global.
 - No cachear agresivamente `manifest.json` ni `features.json`.
+- Regenerar `calibration.json` despues de cambiar mucho la biblioteca de audios.
 - Mantener fallback si `features.json` falla.
 - Probar siempre silencio, ruido y toque real despues de tocar el detector.
 - Mantener botones y controles con tamano suficiente para movil.
@@ -95,7 +99,8 @@ Si una captura no supera las fases 2 o 3, se muestra `Sin toque detectable` o `S
 node --check app.js
 node --check sw.js
 node --check audio-recorder-worklet.js
-python3 -m py_compile scripts/library_manifest.py scripts/serve_app.py scripts/serve_https.py tests/test_library_manifest.py tests/run_tests.py
+python3 -m py_compile scripts/library_manifest.py scripts/calibrate_detection.py scripts/serve_app.py scripts/serve_https.py tests/test_library_manifest.py tests/test_detection_calibration.py tests/run_tests.py
+python3 scripts/calibrate_detection.py
 python3 tests/run_tests.py
 ```
 

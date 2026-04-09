@@ -2,21 +2,23 @@ const ANALYSIS_WINDOW = 2048;
 const ENVELOPE_BINS = 96;
 const MATCHES_LIMIT = 4;
 const HISTORY_LIMIT = 12;
-const MIN_ONSET_THRESHOLD = 0.18;
-const MIN_SIGNAL_RMS = 0.012;
-const MIN_SIGNAL_PEAK = 0.045;
-const MIN_PEAK_RATE = 0.45;
-const MIN_CAPTURE_PEAKS = 3;
-const MIN_MATCH_CONFIDENCE = 28;
-const MIN_SIGNAL_QUALITY = 0.22;
-const MIN_ONSET_CONTRAST = 0.12;
-const MIN_CAPTURE_FINGERPRINTS = 2;
-const MIN_RHYTHMIC_STABILITY = 0.12;
-const MIN_MATCH_ABSOLUTE_SIMILARITY = 0.38;
-const MIN_MATCH_EVIDENCE = 0.42;
-const MIN_FINGERPRINT_VOTES = 2;
-const MIN_FINGERPRINT_SIMILARITY = 0.08;
-const MIN_RHYTHM_SIMILARITY = 0.36;
+const DEFAULT_DETECTION_LIMITS = Object.freeze({
+  minOnsetThreshold: 0.18,
+  minSignalRms: 0.012,
+  minSignalPeak: 0.045,
+  minPeakRate: 0.45,
+  minCapturePeaks: 3,
+  minMatchConfidence: 28,
+  minSignalQuality: 0.22,
+  minOnsetContrast: 0.12,
+  minCaptureFingerprints: 2,
+  minRhythmicStability: 0.12,
+  minMatchAbsoluteSimilarity: 0.38,
+  minMatchEvidence: 0.42,
+  minFingerprintVotes: 2,
+  minFingerprintSimilarity: 0.08,
+  minRhythmSimilarity: 0.36,
+});
 const SUBSEQUENCE_STRIDE_DIVISOR = 18;
 const FINGERPRINT_MAX_NEIGHBORS = 5;
 const FINGERPRINT_MAX_INTERVAL_SECONDS = 3.2;
@@ -83,6 +85,7 @@ const state = {
   adminAuthenticated: false,
   adminActivePanel: "admin-panel",
   toastTimer: null,
+  detectionLimits: { ...DEFAULT_DETECTION_LIMITS },
   adminFilters: {
     search: "",
     tag: "all",
@@ -181,6 +184,7 @@ async function boot() {
   await refreshMicrophoneStatus();
   syncSettingsUi();
   syncModeUi();
+  await loadDetectionCalibration();
   updateStatus("idle", "Cargando referencias");
   await loadPersistedReferences();
   await loadManifestReferences();
@@ -671,6 +675,43 @@ function getTagVisualClass(tag) {
     hash = (hash + char.charCodeAt(0)) % 5;
   });
   return `tag-custom-${hash + 1}`;
+}
+
+async function loadDetectionCalibration() {
+  if (isFileProtocol()) {
+    return;
+  }
+
+  try {
+    const response = await fetch("./assets/pasos/calibration.json", {
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      return;
+    }
+
+    const payload = await response.json();
+    state.detectionLimits = sanitizeDetectionLimits(payload?.recommendedLimits || {});
+    console.info("Calibracion de deteccion cargada", state.detectionLimits);
+  } catch (error) {
+    console.warn("No se pudo cargar calibration.json; se usan umbrales por defecto", error);
+  }
+}
+
+function sanitizeDetectionLimits(limits) {
+  return Object.fromEntries(
+    Object.entries(DEFAULT_DETECTION_LIMITS).map(([key, defaultValue]) => {
+      const value = Number(limits[key]);
+      if (!Number.isFinite(value)) {
+        return [key, defaultValue];
+      }
+      return [key, clamp(value, 0, Number.MAX_SAFE_INTEGER)];
+    }),
+  );
+}
+
+function detectionLimit(key) {
+  return state.detectionLimits?.[key] ?? DEFAULT_DETECTION_LIMITS[key];
 }
 
 function getReferenceInitials(reference) {
@@ -1820,14 +1861,14 @@ function estimateSignalQuality(stats, peaksCount, peakRate, onsetContrast, rhyth
 
 function isUsableCapture(features) {
   return (
-    features.rms >= MIN_SIGNAL_RMS &&
-    features.peakAmplitude >= MIN_SIGNAL_PEAK &&
-    features.peaksCount >= MIN_CAPTURE_PEAKS &&
-    features.peakRate >= MIN_PEAK_RATE &&
-    features.fingerprintsCount >= MIN_CAPTURE_FINGERPRINTS &&
-    features.signalQuality >= MIN_SIGNAL_QUALITY &&
-    features.onsetContrast >= MIN_ONSET_CONTRAST &&
-    features.rhythmicStability >= MIN_RHYTHMIC_STABILITY
+    features.rms >= detectionLimit("minSignalRms") &&
+    features.peakAmplitude >= detectionLimit("minSignalPeak") &&
+    features.peaksCount >= detectionLimit("minCapturePeaks") &&
+    features.peakRate >= detectionLimit("minPeakRate") &&
+    features.fingerprintsCount >= detectionLimit("minCaptureFingerprints") &&
+    features.signalQuality >= detectionLimit("minSignalQuality") &&
+    features.onsetContrast >= detectionLimit("minOnsetContrast") &&
+    features.rhythmicStability >= detectionLimit("minRhythmicStability")
   );
 }
 
@@ -1924,7 +1965,7 @@ function detectPeaks(onset) {
   const sorted = [...onset].sort((left, right) => left - right);
   const percentileIndex = Math.floor(sorted.length * 0.78);
   const adaptiveThreshold = sorted[percentileIndex] || 0;
-  const threshold = Math.max(MIN_ONSET_THRESHOLD, adaptiveThreshold * 0.85);
+  const threshold = Math.max(detectionLimit("minOnsetThreshold"), adaptiveThreshold * 0.85);
 
   for (let index = 1; index < onset.length - 1; index += 1) {
     const value = onset[index];
@@ -2055,7 +2096,7 @@ function compareAgainstReferences(inputFeatures, references, modeKey) {
   const second = scored[1]?.distance ?? best + 0.1;
 
   return scored.slice(0, MATCHES_LIMIT).map((item, index) => {
-    const separationBoost = index === 0 && item.evidenceScore >= MIN_MATCH_EVIDENCE
+    const separationBoost = index === 0 && item.evidenceScore >= detectionLimit("minMatchEvidence")
       ? Math.max(0, Math.min(8, (second - best) * 36))
       : 0;
     const confidence = Math.round(clamp(item.signalAdjustedSimilarity * 100 + separationBoost, 0, 98));
@@ -2069,7 +2110,7 @@ function compareAgainstReferences(inputFeatures, references, modeKey) {
 
 function estimateMatchEvidence(inputFeatures, rhythmMatch, fingerprintMatch, absoluteSimilarity) {
   const voteScore = clamp(
-    fingerprintMatch.votes / Math.max(MIN_FINGERPRINT_VOTES, inputFeatures.fingerprintsCount * 0.28),
+    fingerprintMatch.votes / Math.max(detectionLimit("minFingerprintVotes"), inputFeatures.fingerprintsCount * 0.28),
     0,
     1,
   );
@@ -2090,13 +2131,13 @@ function estimateMatchEvidence(inputFeatures, rhythmMatch, fingerprintMatch, abs
 
 function isReliableMatch(match, settings) {
   return (
-    match.confidence >= Math.max(MIN_MATCH_CONFIDENCE, settings.minimumConfidence) &&
-    match.absoluteSimilarity >= MIN_MATCH_ABSOLUTE_SIMILARITY &&
-    match.evidenceScore >= MIN_MATCH_EVIDENCE &&
-    match.alignment.fingerprintVotes >= MIN_FINGERPRINT_VOTES &&
+    match.confidence >= Math.max(detectionLimit("minMatchConfidence"), settings.minimumConfidence) &&
+    match.absoluteSimilarity >= detectionLimit("minMatchAbsoluteSimilarity") &&
+    match.evidenceScore >= detectionLimit("minMatchEvidence") &&
+    match.alignment.fingerprintVotes >= detectionLimit("minFingerprintVotes") &&
     (
-      match.alignment.fingerprintSimilarity >= MIN_FINGERPRINT_SIMILARITY ||
-      match.alignment.similarity >= MIN_RHYTHM_SIMILARITY
+      match.alignment.fingerprintSimilarity >= detectionLimit("minFingerprintSimilarity") ||
+      match.alignment.similarity >= detectionLimit("minRhythmSimilarity")
     )
   );
 }

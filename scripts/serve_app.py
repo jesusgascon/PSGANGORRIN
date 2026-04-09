@@ -11,6 +11,7 @@ import socketserver
 from pathlib import Path
 from http import HTTPStatus
 
+from calibrate_detection import write_calibration_files
 from library_manifest import read_metadata, write_library_files, write_metadata
 
 
@@ -33,8 +34,14 @@ class CofraBeatHandler(http.server.SimpleHTTPRequestHandler):
                 return self.send_json({"error": "No autorizado"}, HTTPStatus.UNAUTHORIZED)
             return self.send_json(read_metadata(PROJECT_ROOT))
 
-        if self.path in {"/", "/index.html", "/assets/pasos/manifest.json", "/assets/pasos/features.json"}:
-            write_library_files(PROJECT_ROOT)
+        if self.path in {
+            "/",
+            "/index.html",
+            "/assets/pasos/manifest.json",
+            "/assets/pasos/features.json",
+            "/assets/pasos/calibration.json",
+        }:
+            refresh_library()
         return super().do_GET()
 
     def do_POST(self):
@@ -60,7 +67,7 @@ class CofraBeatHandler(http.server.SimpleHTTPRequestHandler):
             return self.send_json({"error": "JSON inválido"}, HTTPStatus.BAD_REQUEST)
 
         write_metadata(PROJECT_ROOT, payload)
-        write_library_files(PROJECT_ROOT)
+        refresh_library()
         return self.send_json({"saved": True, "metadata": read_metadata(PROJECT_ROOT)})
 
     def handle_admin_login(self):
@@ -120,6 +127,14 @@ class ReusableTCPServer(socketserver.TCPServer):
     allow_reuse_address = True
 
 
+def refresh_library() -> None:
+    write_library_files(PROJECT_ROOT)
+    try:
+        write_calibration_files(PROJECT_ROOT, regenerate_library=False)
+    except (Exception, SystemExit) as error:
+        print(f"Calibracion no generada: {error}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Servidor HTTP de CofraBeat con manifest automático.")
     parser.add_argument("--host", default="0.0.0.0", help="Host de escucha. Por defecto 0.0.0.0")
@@ -131,7 +146,7 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
-    write_library_files(PROJECT_ROOT)
+    refresh_library()
     with ReusableTCPServer((args.host, args.port), CofraBeatHandler) as httpd:
         print(f"Serving CofraBeat on http://{args.host}:{args.port} from {PROJECT_ROOT}")
         httpd.serve_forever()

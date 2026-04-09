@@ -16,3 +16,4 @@ certs/
 *.crt
 
 .codex
+resume-codex.sh
