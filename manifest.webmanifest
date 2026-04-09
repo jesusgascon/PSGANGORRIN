@@ -1,0 +1,18 @@
+{
+  "name": "CofraBeat",
+  "short_name": "CofraBeat",
+  "description": "Detector móvil de toques de tambor para Semana Santa.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#12090d",
+  "theme_color": "#12090d",
+  "lang": "es",
+  "icons": [
+    {
+      "src": "./assets/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

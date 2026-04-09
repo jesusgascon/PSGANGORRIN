@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#12090d" />
+    <title>CofraBeat | Detector de Toques</title>
+    <link rel="icon" type="image/svg+xml" href="./assets/icons/icon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="localModeBanner" class="local-mode-banner" hidden>
+      <div class="local-mode-banner__content">
+        <strong>Modo local detectado</strong>
+        <span>
+          La app funciona, pero sin carga automática de referencias ni instalación PWA.
+        </span>
+      </div>
+      <button id="localHelpButton" class="secondary-button" type="button">
+        Abrir con servidor local
+      </button>
+    </div>
+
+    <div class="app-shell">
+      <div class="ambient ambient-a"></div>
+      <div class="ambient ambient-b"></div>
+
+      <header class="topbar">
+        <div class="topbar-brand">
+          <p class="eyebrow">Proyecto Cofradías</p>
+          <h1>CofraBeat</h1>
+          <small id="runtimeInfo" class="runtime-info" hidden></small>
+        </div>
+        <div class="topbar-actions">
+          <span id="modeStatusBadge" class="badge">Modo usuario</span>
+          <button id="modeToggleButton" class="secondary-button topbar-mode-button" type="button">
+            Admin
+          </button>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section id="detectSection" class="hero-card glass user-mode-section">
+          <div class="hero-copy">
+            <p class="eyebrow">Semana Santa · Tambor</p>
+            <h2>Reconocimiento de toques estilo Shazam</h2>
+            <p class="hero-text">
+              Pulsa el tambor central, deja que la app escuche y compara el toque
+              con tu base de audios.
+            </p>
+
+            <div class="hero-stats">
+              <article class="stat-chip">
+                <span class="stat-label">Referencias</span>
+                <strong id="referenceCount">0</strong>
+              </article>
+              <article class="stat-chip">
+                <span class="stat-label">Historial</span>
+                <strong id="historyCount">0</strong>
+              </article>
+              <article class="stat-chip">
+                <span class="stat-label">Modo</span>
+                <strong id="modeLabel">Escucha rápida</strong>
+              </article>
+            </div>
+          </div>
+
+          <div class="listen-panel">
+            <button id="listenButton" class="listen-button" type="button" aria-label="Escuchar">
+              <span class="listen-ring"></span>
+              <span class="listen-outer-mark" aria-hidden="true"></span>
+              <span class="listen-core">
+                <span class="listen-symbol" aria-hidden="true">
+                  <svg viewBox="0 0 96 96" focusable="false">
+                    <circle class="drum-head" cx="48" cy="54" r="23" />
+                    <ellipse class="drum-rim" cx="48" cy="54" rx="30" ry="25" />
+                    <path class="drum-body" d="M22 55c2 17 12 27 26 27s24-10 26-27" />
+                    <path class="drum-stick" d="M24 20l30 26" />
+                    <path class="drum-stick" d="M72 20L42 46" />
+                    <circle class="stick-tip" cx="24" cy="20" r="3" />
+                    <circle class="stick-tip" cx="72" cy="20" r="3" />
+                    <path class="sound-mark" d="M35 54h26" />
+                    <path class="sound-mark" d="M40 63h16" />
+                  </svg>
+                </span>
+                <span id="listenLabel">Escuchar</span>
+                <small id="listenHint">6 segundos</small>
+              </span>
+            </button>
+
+            <div class="meter-wrap">
+              <div class="meter">
+                <div id="meterFill" class="meter-fill"></div>
+              </div>
+              <div class="meter-labels">
+                <span>Silencio</span>
+                <span>Presencia</span>
+              </div>
+            </div>
+
+            <div class="session-stats">
+              <div class="session-item">
+                <span>Ritmo</span>
+                <strong id="capturedTempo">0 bpm</strong>
+              </div>
+              <div class="session-item">
+                <span>Golpes</span>
+                <strong id="capturedPeaks">0</strong>
+              </div>
+            </div>
+
+            <div class="device-status">
+              <article class="device-chip">
+                <span>Micrófono</span>
+                <strong id="micStatusLabel">Comprobando</strong>
+              </article>
+              <article class="device-chip">
+                <span>Conexión</span>
+                <strong id="transportStatusLabel">Comprobando</strong>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section id="resultSection" class="result-card glass user-mode-section">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Veredicto</p>
+              <h3>Detección encontrada</h3>
+            </div>
+            <span id="statusPill" class="status-pill idle">Esperando audio</span>
+          </div>
+
+          <div id="resultState" class="result-state">
+            <div class="result-main">
+              <div class="result-seal" aria-hidden="true">
+                <svg viewBox="0 0 64 64" focusable="false">
+                  <circle cx="32" cy="32" r="24" />
+                  <path d="M20 34h8l4-10 5 18 4-8h5" />
+                  <path d="M18 46h28" />
+                </svg>
+              </div>
+              <span class="result-kicker">Toque más probable</span>
+              <p id="matchName" class="match-name">A la espera del toque</p>
+              <p id="matchMeta" class="match-meta">
+                Escucha un toque para ver el veredicto y sus alternativas.
+              </p>
+            </div>
+
+            <div class="confidence-block">
+              <div class="confidence-ring">
+                <span id="confidenceValue">0%</span>
+              </div>
+              <p>Confianza</p>
+            </div>
+          </div>
+
+          <div class="action-row">
+            <button id="shareResultButton" class="secondary-button" type="button">
+              Compartir
+            </button>
+            <button id="repeatResultButton" class="secondary-button" type="button">
+              Repetir
+            </button>
+          </div>
+
+          <div class="rankings">
+            <div class="section-head compact">
+              <h4>Coincidencias más probables</h4>
+            </div>
+            <div id="matchesList" class="matches-list"></div>
+          </div>
+        </section>
+
+        <section id="controlsSection" class="controls-card glass user-mode-section">
+          <div class="section-head compact">
+            <h4>Ajustes de escucha</h4>
+          </div>
+
+          <div class="control-group">
+            <label for="captureDuration">Duración de escucha</label>
+            <div class="slider-row">
+              <input
+                id="captureDuration"
+                type="range"
+                min="3"
+                max="10"
+                step="1"
+                value="6"
+                aria-describedby="captureDurationValue"
+              />
+              <strong id="captureDurationValue">6 s</strong>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <label for="minimumConfidence">Confianza mínima destacada</label>
+            <div class="slider-row">
+              <input
+                id="minimumConfidence"
+                type="range"
+                min="40"
+                max="90"
+                step="1"
+                value="62"
+                aria-describedby="minimumConfidenceValue"
+              />
+              <strong id="minimumConfidenceValue">62%</strong>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <label for="analysisMode">Perfil de detección</label>
+            <select id="analysisMode" class="mobile-select">
+              <option value="fast">Escucha rápida</option>
+              <option value="balanced">Equilibrado</option>
+              <option value="strict">Más estricto</option>
+            </select>
+          </div>
+        </section>
+
+        <section id="adminPanelSection" class="library-card glass admin-mode-section admin-panel-shell">
+          <div id="adminSummarySection" class="admin-mobile-panel" data-admin-panel="admin-panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Administración</p>
+                <h3>Biblioteca de toques</h3>
+              </div>
+              <label class="upload-button">
+                <input id="fileInput" type="file" accept=".mp3,audio/mpeg" multiple />
+                Añadir mp3
+              </label>
+            </div>
+
+            <div class="admin-status-card">
+              <span>Estado de la base</span>
+              <strong id="librarySummary">0 referencias activas</strong>
+              <p id="adminCommonMessage" class="library-note" hidden></p>
+            </div>
+
+            <div class="hero-stats admin-stats">
+              <article class="stat-chip">
+                <span class="stat-label">Audios</span>
+                <strong id="adminTotalAudios">0</strong>
+              </article>
+              <article class="stat-chip">
+                <span class="stat-label">Mostrados</span>
+                <strong id="adminFilteredAudios">0</strong>
+              </article>
+              <article class="stat-chip">
+                <span class="stat-label">Base común</span>
+                <strong id="adminCommonStatus">0/0</strong>
+              </article>
+            </div>
+
+            <div class="admin-quick-actions" aria-label="Accesos rápidos de administración">
+              <button class="admin-quick-action" type="button" data-admin-open="admin-search">
+                <span>Buscar</span>
+                <strong>Tipos y filtros</strong>
+              </button>
+              <button class="admin-quick-action" type="button" data-admin-open="admin-upload">
+                <span>Subir</span>
+                <strong>Añadir mp3</strong>
+              </button>
+              <button class="admin-quick-action" type="button" data-admin-open="admin-library">
+                <span>Toques</span>
+                <strong>Editar fichas</strong>
+              </button>
+            </div>
+
+            <div class="admin-secondary-actions">
+              <button class="ghost-button" type="button" data-admin-open="admin-info">
+                Guía de mantenimiento
+              </button>
+              <button id="clearLibraryButton" class="ghost-button danger-soft" type="button">
+                Borrar cargas locales
+              </button>
+            </div>
+          </div>
+
+          <div id="adminToolsSection" class="admin-tools admin-mobile-panel" data-admin-panel="admin-search">
+            <div class="admin-panel-title">
+              <p class="eyebrow">Buscar y clasificar</p>
+              <h4>Filtros de la base</h4>
+            </div>
+            <div class="admin-metadata-panel">
+              <div>
+                <p class="eyebrow">Metadatos globales</p>
+                <h4>Tipos y etiquetas</h4>
+                <p class="library-note">Organiza los toques por familias.</p>
+              </div>
+              <div id="adminTagChips" class="tag-chip-list"></div>
+              <div class="metadata-add-row">
+                <input
+                  id="adminNewTagInput"
+                  class="mobile-input"
+                  type="text"
+                  maxlength="80"
+                  placeholder="Ejemplo: Procesión lenta"
+                  autocomplete="off"
+                />
+                <button id="adminAddTagButton" class="secondary-button" type="button">
+                  Añadir tipo
+                </button>
+              </div>
+              <p id="adminMetadataStatus" class="library-note" hidden></p>
+            </div>
+            <div class="control-group">
+              <label for="adminSearchInput">Buscar referencia</label>
+              <input
+                id="adminSearchInput"
+                class="mobile-input"
+                type="search"
+                placeholder="Buscar por nombre, archivo o etiqueta"
+                autocomplete="off"
+              />
+            </div>
+            <div class="control-group">
+              <label for="adminTagFilter">Filtrar por tipo de toque</label>
+              <select id="adminTagFilter" class="mobile-select">
+                <option value="all">Todos</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="adminUploadSection" class="drop-zone admin-mobile-panel" data-admin-panel="admin-upload">
+            <div class="admin-panel-title">
+              <p class="eyebrow">Añadir audio</p>
+              <h4>Nuevos toques</h4>
+            </div>
+            <p>Subir toques grabados de tambor</p>
+            <small>Formato recomendado: mp3 limpios, un toque por archivo</small>
+            <button id="adminSelectFilesButton" class="secondary-button upload-select-button" type="button">
+              Seleccionar mp3
+            </button>
+          </div>
+
+          <div id="adminLibrarySection" class="admin-mobile-panel" data-admin-panel="admin-library">
+            <div class="admin-panel-title">
+              <p class="eyebrow">Biblioteca</p>
+              <h4>Toques disponibles</h4>
+            </div>
+            <div id="libraryGrid" class="library-grid"></div>
+          </div>
+        </section>
+
+        <section id="historySection" class="history-card glass user-mode-section">
+          <div class="section-head compact">
+            <h4>Historial reciente</h4>
+            <button id="clearHistoryButton" class="ghost-button" type="button">
+              Borrar
+            </button>
+          </div>
+          <div id="historyList" class="history-list"></div>
+        </section>
+
+        <section class="info-card glass user-mode-section quick-help-card">
+          <div class="section-head compact">
+            <h4>Uso rápido</h4>
+          </div>
+          <div class="quick-help-grid">
+            <article class="quick-help-item">
+              <strong>1</strong>
+              <span>Pulsa <em>Escuchar</em> para capturar el toque.</span>
+            </article>
+            <article class="quick-help-item">
+              <strong>2</strong>
+              <span>Consulta el mejor resultado y sus alternativas.</span>
+            </article>
+            <article class="quick-help-item">
+              <strong>3</strong>
+              <span>Usa la barra inferior para moverte por la app.</span>
+            </article>
+          </div>
+        </section>
+
+        <section id="adminInfoSection" class="info-card glass admin-mode-section admin-info-shell admin-mobile-panel" data-admin-panel="admin-info">
+          <div class="section-head compact">
+            <div>
+              <p class="eyebrow">Mantenimiento</p>
+              <h4>Guía del administrador</h4>
+            </div>
+            <button class="ghost-button compact-ghost" type="button" data-admin-open="admin-panel">
+              Volver al panel
+            </button>
+          </div>
+          <div class="admin-guide-summary">
+            <article>
+              <strong>Base común</strong>
+              <span>Los mp3 oficiales viven en la biblioteca del proyecto.</span>
+            </article>
+            <article>
+              <strong>Fichas</strong>
+              <span>Nombres, tipos y notas se guardan para todos los usuarios.</span>
+            </article>
+            <article>
+              <strong>Móvil</strong>
+              <span>Entra desde la IP del ordenador que sirve la app.</span>
+            </article>
+          </div>
+          <div class="admin-help-grid">
+            <div id="localHelpCard" class="local-help-card" hidden>
+              <p class="local-help-title">Servidor de la app</p>
+              <p class="library-note">
+                Úsalo cuando abras la app desde este ordenador y quieras regenerar la biblioteca.
+              </p>
+              <pre class="help-code"><code>cd /home/jesus/Escritorio/PSGANGORRIN
+python3 ./scripts/serve_app.py --host 0.0.0.0 --port 8000</code></pre>
+            </div>
+            <div class="network-help-card">
+              <p class="local-help-title">Abrir desde el móvil</p>
+              <p class="library-note">
+                Usa la IP del ordenador servidor. <code>localhost</code> solo sirve en este equipo.
+              </p>
+              <pre class="help-code"><code>python3 ./scripts/serve_app.py --host 0.0.0.0 --port 8000
+http://IP-DE-TU-ORDENADOR:8000</code></pre>
+            </div>
+            <div class="network-help-card">
+              <p class="local-help-title">Micrófono en móvil</p>
+              <p class="library-note">
+                Si el navegador bloquea el micro por HTTP, usa HTTPS local para probar la escucha.
+              </p>
+              <pre class="help-code"><code>chmod +x ./scripts/generate-dev-cert.sh
+./scripts/generate-dev-cert.sh IP-DE-TU-ORDENADOR
+python3 ./scripts/serve_https.py --host 0.0.0.0 --port 8443</code></pre>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <nav class="bottom-nav user-mode-section" aria-label="Navegación rápida">
+        <button class="bottom-nav__item" type="button" data-nav-target="detect">
+          <span class="bottom-nav__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <path d="M4 11.5L12 5l8 6.5" />
+              <path d="M6.5 10.5V19h11v-8.5" />
+            </svg>
+          </span>
+          <span>Inicio</span>
+        </button>
+        <button class="bottom-nav__item bottom-nav__item--primary" type="button" data-nav-target="listen">
+          <span class="bottom-nav__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <circle cx="12" cy="12" r="7" />
+              <circle cx="12" cy="12" r="2.5" />
+            </svg>
+          </span>
+          <span>Escuchar</span>
+        </button>
+        <button class="bottom-nav__item" type="button" data-nav-target="result">
+          <span class="bottom-nav__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <path d="M6 12h2.5l2-4 3 8 2-4H18" />
+              <path d="M4 19h16" />
+            </svg>
+          </span>
+          <span>Resultado</span>
+        </button>
+        <button class="bottom-nav__item" type="button" data-nav-target="controls">
+          <span class="bottom-nav__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <path d="M5 7h14" />
+              <path d="M5 12h14" />
+              <path d="M5 17h14" />
+            </svg>
+          </span>
+          <span>Ajustes</span>
+        </button>
+      </nav>
+
+      <nav class="bottom-nav bottom-nav--admin admin-mode-section" aria-label="Acciones de mantenimiento">
+        <button class="bottom-nav__item" type="button" data-nav-target="admin-panel">
+          <span class="bottom-nav__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <rect x="5" y="5" width="14" height="14" rx="3" />
+              <path d="M9 9h6" />
+              <path d="M9 13h6" />
+            </svg>
+          </span>
+          <span>Panel</span>
+        </button>
+        <button class="bottom-nav__item" type="button" data-nav-target="admin-search">
+          <span class="bottom-nav__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <circle cx="11" cy="11" r="5.5" />
+              <path d="M16 16l3 3" />
+            </svg>
+          </span>
+          <span>Buscar</span>
+        </button>
+        <button class="bottom-nav__item bottom-nav__item--primary bottom-nav__item--admin" type="button" data-nav-target="admin-upload">
+          <span class="bottom-nav__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <path d="M12 6v12" />
+              <path d="M6 12h12" />
+            </svg>
+          </span>
+          <span>Subir</span>
+        </button>
+        <button class="bottom-nav__item" type="button" data-nav-target="admin-library">
+          <span class="bottom-nav__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <rect x="5" y="5" width="5" height="5" rx="1.5" />
+              <rect x="14" y="5" width="5" height="5" rx="1.5" />
+              <rect x="5" y="14" width="5" height="5" rx="1.5" />
+              <rect x="14" y="14" width="5" height="5" rx="1.5" />
+            </svg>
+          </span>
+          <span>Toques</span>
+        </button>
+      </nav>
+    </div>
+
+    <div id="adminLoginModal" class="modal-backdrop" hidden>
+      <section
+        class="admin-login-modal glass"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="adminLoginTitle"
+      >
+        <div class="section-head compact">
+          <div>
+            <p class="eyebrow">Mantenimiento</p>
+            <h3 id="adminLoginTitle">Acceso administrador</h3>
+          </div>
+          <button id="adminLoginCloseButton" class="icon-button" type="button" aria-label="Cerrar">
+            ×
+          </button>
+        </div>
+        <p class="library-note">
+          Introduce la contraseña para gestionar la base de toques.
+        </p>
+        <form id="adminLoginForm" class="admin-login-form">
+          <label class="control-group" for="adminPasswordInput">
+            <span>Contraseña</span>
+            <input
+              id="adminPasswordInput"
+              class="mobile-input"
+              type="password"
+              autocomplete="current-password"
+              placeholder="Contraseña de mantenimiento"
+            />
+          </label>
+          <p id="adminLoginError" class="form-error" hidden>Contraseña incorrecta.</p>
+          <div class="action-row">
+            <button id="adminLoginSubmitButton" class="secondary-button" type="submit">
+              Entrar
+            </button>
+            <button id="adminLoginCancelButton" class="ghost-button" type="button">
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div id="appToast" class="app-toast" role="status" aria-live="polite" hidden>
+      <strong id="appToastTitle">Aviso</strong>
+      <span id="appToastMessage"></span>
+    </div>
+
+    <script defer src="./app.js"></script>
+  </body>
+</html>
