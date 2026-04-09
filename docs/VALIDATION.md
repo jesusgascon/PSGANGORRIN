@@ -46,11 +46,21 @@ Ensayar el perfil recomendado para micro real:
 python3 scripts/validate_detection.py --runs 400 --min-seconds 4 --max-seconds 12 --active-segments --require-usable --skip-regenerate --mode field
 ```
 
+La app web tambien analiza varias ventanas activas dentro de cada escucha real. Por eso, si una grabacion de microfono incluye silencio al principio o eco al final, puede detectar usando solo el tramo mas util.
+
 Hacer una prueba cruda totalmente aleatoria, incluyendo posibles silencios o partes sin golpes:
 
 ```bash
 python3 scripts/validate_detection.py --runs 5 --min-seconds 4 --max-seconds 8 --random-segments
 ```
+
+Analizar grabaciones reales ya capturadas desde microfono o monitor:
+
+```bash
+python3 scripts/analyze_capture.py /tmp/cofrabeat-mic-tests/*.wav --mode field
+```
+
+Este comando usa la misma logica de tramos activos que la app web y muestra si la captura es usable, el ranking y si el resultado queda confirmado o ambiguo.
 
 ## Como Leer El Resultado
 

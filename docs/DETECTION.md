@@ -11,6 +11,14 @@ El enfoque toma ideas de sistemas de audio fingerprinting y deteccion de onsets:
 - Shazam/Avery Wang: fingerprints robustos y votos coherentes por alineacion temporal.
 - AUDFPRINT/Dan Ellis: landmarks/fingerprints y busqueda por offsets.
 - Librosa onset detection: fuerza de onset y seleccion de picos.
+- Web Audio API: captura con `AudioWorklet` en vez de `ScriptProcessorNode`.
+
+Referencias consultadas:
+
+- Avery Wang, `An Industrial-Strength Audio Search Algorithm`: https://zenodo.org/records/1416340
+- Dan Ellis, `Robust Landmark-Based Audio Fingerprinting`: https://www.ee.columbia.edu/~dpwe/resources/matlab/fingerprint/
+- Librosa, `onset_strength`: https://librosa.org/doc/0.10.2/generated/librosa.onset.onset_strength.html
+- MDN, `ScriptProcessorNode` deprecated: https://developer.mozilla.org/en-US/docs/Web/API/ScriptProcessorNode
 
 La implementacion de CofraBeat es mas ligera y corre en navegador, pero mantiene la idea clave: no basta con encontrar el candidato mas cercano; debe haber evidencia suficiente.
 
@@ -29,6 +37,21 @@ Recomendacion practica:
 - repetir si la app marca resultado ambiguo
 
 El modo `Micro real` baja el umbral visible para permitir capturas de altavoz, pero compensa con reglas mas estrictas de evidencia, votos ritmicos y separacion entre candidatos. Si dos referencias quedan muy cerca, la app muestra resultado ambiguo.
+
+## Tramos Activos De La Captura
+
+La escucha real no siempre empieza justo cuando empieza el toque. Puede haber silencio inicial, eco final, ruido de sala o un golpe aislado antes del patron principal.
+
+Para reducir ese problema, CofraBeat no compara solo la grabacion completa. Primero crea varios tramos candidatos:
+
+- grabacion completa
+- tramo activo principal de energia
+- ventanas de 6, 8, 10 y 12 segundos alrededor de la zona mas fuerte
+- pequenas ventanas alrededor de los centros con mas energia
+
+Cada tramo se analiza igual que una captura normal. La app escoge el tramo con mejor mezcla de evidencia, confianza, calidad ritmica y separacion respecto al segundo resultado. Si el tramo elegido no es la grabacion completa, el resultado muestra desde que segundo se ha analizado.
+
+Esta idea sigue el principio de fingerprinting robusto: buscar evidencia local estable y alineada, no obligar a que toda la grabacion sea perfecta.
 
 ## Fase 1: Extraccion De Senal
 

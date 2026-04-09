@@ -284,6 +284,7 @@ El navegador puede mostrar aviso de certificado porque es un certificado local d
 - `scripts/library_manifest.py`: genera manifest y features.
 - `scripts/calibrate_detection.py`: genera calibracion e informe.
 - `scripts/validate_detection.py`: simula escuchas con MP3 de la biblioteca y valida resultados.
+- `scripts/analyze_capture.py`: analiza grabaciones reales de microfono o monitor contra la biblioteca.
 - `scripts/serve_app.py`: servidor HTTP local con administracion.
 - `scripts/serve_https.py`: servidor HTTPS local.
 - `scripts/generate-dev-cert.sh`: certificado local para HTTPS.
@@ -303,7 +304,7 @@ Ejecutar antes de subir cambios importantes:
 node --check app.js
 node --check sw.js
 node --check audio-recorder-worklet.js
-python3 -m py_compile scripts/library_manifest.py scripts/calibrate_detection.py scripts/serve_app.py scripts/serve_https.py tests/test_library_manifest.py tests/test_detection_calibration.py tests/run_tests.py
+python3 -m py_compile scripts/library_manifest.py scripts/calibrate_detection.py scripts/analyze_capture.py scripts/serve_app.py scripts/serve_https.py tests/test_library_manifest.py tests/test_detection_calibration.py tests/run_tests.py
 python3 scripts/calibrate_detection.py
 python3 scripts/validate_detection.py --all --skip-regenerate
 python3 tests/run_tests.py
@@ -342,6 +343,14 @@ python3 scripts/validate_detection.py --runs 400 --min-seconds 4 --max-seconds 1
 Esta prueba no usa el microfono. Toma un fragmento simulado de cada MP3, lo compara contra la biblioteca y comprueba que la mejor coincidencia sea el mismo archivo.
 
 El validador distingue entre detecciones confirmadas, resultados ambiguos, resultados por debajo del umbral y confusiones reales. Un resultado ambiguo no se considera una deteccion segura: la app pide repetir la escucha. El ranking se ordena por la confianza final calculada, no solo por cercania bruta, para evitar que un candidato tecnicamente cercano pero menos fiable aparezca como principal.
+
+Analizar grabaciones reales ya capturadas desde microfono o monitor:
+
+```bash
+python3 scripts/analyze_capture.py /tmp/cofrabeat-mic-tests/*.wav --mode field
+```
+
+Este comando sirve para pruebas de campo. Si el audio se grabo por microfono real, mostrara si la captura es usable, que tramo se ha elegido y que ranking obtiene.
 
 Comprobacion rapida de CSS:
 

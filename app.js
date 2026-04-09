@@ -34,6 +34,9 @@ const MODE_LIMIT_OVERRIDES = Object.freeze({
   },
 });
 const SUBSEQUENCE_STRIDE_DIVISOR = 18;
+const CAPTURE_FRAME_SECONDS = 0.12;
+const CAPTURE_WINDOW_SECONDS = [6, 8, 10, 12];
+const MAX_CAPTURE_CANDIDATES = 9;
 const FINGERPRINT_MAX_NEIGHBORS = 5;
 const FINGERPRINT_MAX_INTERVAL_SECONDS = 3.2;
 const FINGERPRINT_INTERVAL_STEP = 0.05;
@@ -1364,8 +1367,15 @@ function processCapturedSignal(inputSignal, capturedSeconds) {
     return;
   }
 
-  const features = analyseSignal(inputSignal, state.audioContext.sampleRate);
-  if (!isUsableCapture(features)) {
+  const candidate = analyseCaptureCandidates(
+    inputSignal,
+    state.audioContext.sampleRate,
+    state.references,
+    state.settings.analysisMode,
+  );
+  const features = candidate.features;
+
+  if (!candidate.usable) {
     updateResult({
       name: "Sin toque detectable",
       meta: buildCaptureAdvice(features),
@@ -1378,7 +1388,7 @@ function processCapturedSignal(inputSignal, capturedSeconds) {
     return;
   }
 
-  const results = compareAgainstReferences(features, state.references, state.settings.analysisMode);
+  const results = candidate.results;
   const bestMatch = results[0];
 
   if (!bestMatch) {
@@ -1397,7 +1407,7 @@ function processCapturedSignal(inputSignal, capturedSeconds) {
   const ambiguity = getMatchAmbiguity(results);
   if (!isReliableMatch(bestMatch, state.settings) || ambiguity) {
     const ambiguityMeta = ambiguity
-      ? `Resultado parecido entre "${bestMatch.reference.name}" y "${ambiguity.reference.name}". ${formatCaptureDiagnostics(features)} Repite la escucha más cerca del altavoz o del tambor para confirmar.`
+      ? `Resultado parecido entre "${bestMatch.reference.name}" y "${ambiguity.reference.name}". ${formatCaptureDiagnostics(features)} ${formatWindowDiagnostics(candidate)} Repite la escucha más cerca del altavoz o del tambor para confirmar.`
       : `Resultado no concluyente tras ${capturedSeconds.toFixed(1)} s de escucha. ${buildCaptureAdvice(features)}`;
     updateResult({
       name: ambiguity ? "Resultado ambiguo" : "Sin detección fiable",
@@ -1413,7 +1423,7 @@ function processCapturedSignal(inputSignal, capturedSeconds) {
 
   updateResult({
     name: bestMatch.reference.name,
-    meta: formatMatchMeta(bestMatch, features),
+    meta: `${formatMatchMeta(bestMatch, features)}${formatWindowDiagnostics(candidate)}`,
     confidence: bestMatch.confidence,
     matches: results,
     analysis: features,
@@ -1833,6 +1843,204 @@ function analyseSignal(signal, sampleRate) {
   };
 }
 
+function analyseCaptureCandidates(signal, sampleRate, references, modeKey) {
+  const windows = buildCaptureWindows(signal, sampleRate);
+  let bestCandidate = null;
+  let fallbackCandidate = null;
+
+  windows.forEach((window, index) => {
+    const features = analyseSignal(window.signal, sampleRate);
+    const usable = isUsableCapture(features, modeKey);
+    const results = usable ? compareAgainstReferences(features, references, modeKey) : [];
+    const bestMatch = results[0] || null;
+    const ambiguity = bestMatch ? getMatchAmbiguity(results, modeKey) : null;
+    const reliable = Boolean(bestMatch && isReliableMatch(bestMatch, { ...state.settings, analysisMode: modeKey }) && !ambiguity);
+    const score = scoreCaptureCandidate(features, bestMatch, ambiguity, reliable, index);
+    const candidate = { ...window, features, usable, results, bestMatch, ambiguity, reliable, score };
+
+    if (!fallbackCandidate || candidate.score > fallbackCandidate.score) {
+      fallbackCandidate = candidate;
+    }
+
+    if (!usable || !bestMatch) {
+      return;
+    }
+
+    if (!bestCandidate || isBetterCaptureCandidate(candidate, bestCandidate)) {
+      bestCandidate = candidate;
+    }
+  });
+
+  return bestCandidate || fallbackCandidate || {
+    signal,
+    startSeconds: 0,
+    durationSeconds: signal.length / sampleRate,
+    isFullCapture: true,
+    features: analyseSignal(signal, sampleRate),
+    usable: false,
+    results: [],
+    bestMatch: null,
+    ambiguity: null,
+    reliable: false,
+    score: 0,
+  };
+}
+
+function isBetterCaptureCandidate(candidate, current) {
+  if (candidate.reliable !== current.reliable) {
+    return candidate.reliable;
+  }
+
+  return candidate.score > current.score;
+}
+
+function buildCaptureWindows(signal, sampleRate) {
+  const fullWindow = {
+    signal,
+    startSeconds: 0,
+    durationSeconds: signal.length / sampleRate,
+    isFullCapture: true,
+  };
+  const durationSeconds = fullWindow.durationSeconds;
+
+  if (durationSeconds <= 6.5) {
+    return [fullWindow];
+  }
+
+  const activeRange = findActiveSignalRange(signal, sampleRate);
+  const windows = [fullWindow];
+  const addWindow = (startSeconds, windowSeconds) => {
+    const duration = Math.min(windowSeconds, durationSeconds);
+    if (duration < 3.8) {
+      return;
+    }
+
+    const start = clamp(startSeconds, 0, Math.max(0, durationSeconds - duration));
+    const startSample = Math.floor(start * sampleRate);
+    const endSample = Math.min(signal.length, Math.ceil((start + duration) * sampleRate));
+    if (endSample - startSample < ANALYSIS_WINDOW) {
+      return;
+    }
+
+    const duplicate = windows.some(
+      (item) => Math.abs(item.startSeconds - start) < 0.18 && Math.abs(item.durationSeconds - duration) < 0.18,
+    );
+    if (duplicate) {
+      return;
+    }
+
+    windows.push({
+      signal: signal.slice(startSample, endSample),
+      startSeconds: start,
+      durationSeconds: (endSample - startSample) / sampleRate,
+      isFullCapture: false,
+    });
+  };
+
+  if (activeRange) {
+    const activeCenter = (activeRange.startSeconds + activeRange.endSeconds) / 2;
+    CAPTURE_WINDOW_SECONDS.forEach((windowSeconds) => {
+      addWindow(activeCenter - windowSeconds / 2, windowSeconds);
+    });
+    addWindow(activeRange.startSeconds - 0.5, Math.min(durationSeconds, activeRange.durationSeconds + 1));
+  }
+
+  const frameBest = findStrongestSignalCenters(signal, sampleRate);
+  frameBest.forEach((centerSeconds) => {
+    addWindow(centerSeconds - 4, 8);
+    addWindow(centerSeconds - 3, 6);
+  });
+
+  return windows.slice(0, MAX_CAPTURE_CANDIDATES);
+}
+
+function findActiveSignalRange(signal, sampleRate) {
+  const frames = measureCaptureFrames(signal, sampleRate);
+  if (!frames.length) {
+    return null;
+  }
+
+  const values = frames.map((frame) => frame.rms).sort((left, right) => left - right);
+  const median = values[Math.floor(values.length * 0.5)] || 0;
+  const p80 = values[Math.floor(values.length * 0.8)] || 0;
+  const peak = values[values.length - 1] || 0;
+  const threshold = Math.max(0.003, median * 1.8, p80 * 0.55, peak * 0.16);
+  const activeIndexes = frames
+    .map((frame, index) => (frame.rms >= threshold ? index : -1))
+    .filter((index) => index >= 0);
+
+  if (!activeIndexes.length) {
+    return null;
+  }
+
+  const startFrame = Math.max(0, activeIndexes[0] - 2);
+  const endFrame = Math.min(frames.length - 1, activeIndexes[activeIndexes.length - 1] + 2);
+  const startSeconds = frames[startFrame].startSeconds;
+  const endSeconds = Math.min(signal.length / sampleRate, frames[endFrame].endSeconds);
+
+  return {
+    startSeconds,
+    endSeconds,
+    durationSeconds: Math.max(0, endSeconds - startSeconds),
+  };
+}
+
+function findStrongestSignalCenters(signal, sampleRate) {
+  const frames = measureCaptureFrames(signal, sampleRate);
+  const ordered = frames
+    .filter((frame) => frame.rms > 0.003)
+    .sort((left, right) => right.rms - left.rms);
+  const centers = [];
+
+  ordered.forEach((frame) => {
+    const center = (frame.startSeconds + frame.endSeconds) / 2;
+    if (centers.every((existing) => Math.abs(existing - center) > 2.5)) {
+      centers.push(center);
+    }
+  });
+
+  return centers.slice(0, 3);
+}
+
+function measureCaptureFrames(signal, sampleRate) {
+  const frameSize = Math.max(ANALYSIS_WINDOW, Math.round(sampleRate * CAPTURE_FRAME_SECONDS));
+  const hopSize = Math.max(1, Math.floor(frameSize / 2));
+  const frames = [];
+
+  for (let start = 0; start + frameSize <= signal.length; start += hopSize) {
+    let energy = 0;
+    for (let index = start; index < start + frameSize; index += 1) {
+      const value = signal[index];
+      energy += value * value;
+    }
+    frames.push({
+      rms: Math.sqrt(energy / frameSize),
+      startSeconds: start / sampleRate,
+      endSeconds: (start + frameSize) / sampleRate,
+    });
+  }
+
+  return frames;
+}
+
+function scoreCaptureCandidate(features, bestMatch, ambiguity, reliable, order) {
+  const matchScore = bestMatch
+    ? bestMatch.confidence * 0.45 +
+      bestMatch.evidenceScore * 35 +
+      bestMatch.absoluteSimilarity * 20 +
+      Math.min(12, (bestMatch.alignment?.fingerprintVotes || 0) * 0.7)
+    : 0;
+  const qualityScore =
+    features.signalQuality * 16 +
+    features.onsetContrast * 10 +
+    Math.min(8, features.peaksCount * 0.35) +
+    Math.min(8, features.fingerprintsCount * 0.08);
+  const ambiguityPenalty = ambiguity ? 18 : 0;
+  const reliabilityBoost = reliable ? 25 : 0;
+
+  return matchScore + qualityScore + reliabilityBoost - ambiguityPenalty - order * 0.3;
+}
+
 function measureSignal(signal) {
   let peak = 0;
   let energy = 0;
@@ -1918,16 +2126,16 @@ function estimateSignalQuality(stats, peaksCount, peakRate, onsetContrast, rhyth
   );
 }
 
-function isUsableCapture(features) {
+function isUsableCapture(features, modeKey = state.settings.analysisMode) {
   return (
-    features.rms >= detectionLimit("minSignalRms") &&
-    features.peakAmplitude >= detectionLimit("minSignalPeak") &&
-    features.peaksCount >= detectionLimit("minCapturePeaks") &&
-    features.peakRate >= detectionLimit("minPeakRate") &&
-    features.fingerprintsCount >= detectionLimit("minCaptureFingerprints") &&
-    features.signalQuality >= detectionLimit("minSignalQuality") &&
-    features.onsetContrast >= detectionLimit("minOnsetContrast") &&
-    features.rhythmicStability >= detectionLimit("minRhythmicStability")
+    features.rms >= detectionLimit("minSignalRms", modeKey) &&
+    features.peakAmplitude >= detectionLimit("minSignalPeak", modeKey) &&
+    features.peaksCount >= detectionLimit("minCapturePeaks", modeKey) &&
+    features.peakRate >= detectionLimit("minPeakRate", modeKey) &&
+    features.fingerprintsCount >= detectionLimit("minCaptureFingerprints", modeKey) &&
+    features.signalQuality >= detectionLimit("minSignalQuality", modeKey) &&
+    features.onsetContrast >= detectionLimit("minOnsetContrast", modeKey) &&
+    features.rhythmicStability >= detectionLimit("minRhythmicStability", modeKey)
   );
 }
 
@@ -2205,13 +2413,12 @@ function isReliableMatch(match, settings) {
   );
 }
 
-function getMatchAmbiguity(matches) {
+function getMatchAmbiguity(matches, modeKey = state.settings.analysisMode) {
   const best = matches[0];
   if (!best || matches.length < 2) {
     return null;
   }
 
-  const modeKey = state.settings.analysisMode;
   const minimumMargin = detectionLimit("minTopMatchMargin", modeKey);
   const minimumPlausibleConfidence = Math.max(
     detectionLimit("minMatchConfidence", modeKey) - 8,
@@ -2870,6 +3077,14 @@ function formatCaptureDiagnostics(analysis) {
   }
 
   return `Captado: ${Math.round(analysis.tempoEstimate || 0)} bpm, ${analysis.peaksCount || 0} golpes, calidad ${Math.round((analysis.signalQuality || 0) * 100)}%.`;
+}
+
+function formatWindowDiagnostics(candidate) {
+  if (!candidate || candidate.isFullCapture) {
+    return "";
+  }
+
+  return ` Tramo analizado: ${formatDuration(candidate.durationSeconds)} desde ${formatDuration(candidate.startSeconds)}.`;
 }
 
 function buildCaptureAdvice(analysis) {

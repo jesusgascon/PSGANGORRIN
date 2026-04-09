@@ -8,6 +8,8 @@
 - Deteccion mas prudente: si dos toques quedan demasiado cerca, se muestra resultado ambiguo en vez de confirmar uno.
 - Perfil `Micro real` para pruebas con altavoz y microfono, escucha por defecto de 8 segundos y titulo principal mas compacto en movil.
 - Perfil `Micro real` reforzado: escucha por defecto de 10 segundos, umbral visible mas realista, ranking ordenado por confianza final y avisos de senal baja, saturacion o captura ambigua.
+- Analisis por tramos activos dentro de la captura para mejorar escuchas reales con silencio, eco o ruido de sala.
+- Nuevo script `scripts/analyze_capture.py` para analizar WAV/MP3 reales grabados con microfono o monitor del sistema.
 
 ## v1.1.0
 
