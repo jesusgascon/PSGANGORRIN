@@ -79,6 +79,25 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--project-root", type=Path, default=PROJECT_ROOT)
     parser.add_argument("--seconds", type=float, default=6.0, help="Duracion simulada de escucha.")
+    parser.add_argument("--min-seconds", type=float, help="Duracion minima aleatoria por ensayo.")
+    parser.add_argument("--max-seconds", type=float, help="Duracion maxima aleatoria por ensayo.")
+    parser.add_argument("--runs", type=int, default=1, help="Numero de ensayos aleatorios.")
+    parser.add_argument(
+        "--random-segments",
+        action="store_true",
+        help="Usa trozos aleatorios en vez del tramo con mas golpes.",
+    )
+    parser.add_argument(
+        "--active-segments",
+        action="store_true",
+        help="Usa trozos aleatorios con actividad ritmica suficiente.",
+    )
+    parser.add_argument(
+        "--require-usable",
+        action="store_true",
+        help="Reintenta otro trozo si la captura simulada no tiene suficientes golpes.",
+    )
+    parser.add_argument("--max-attempts", type=int, default=30, help="Intentos por ensayo usable.")
     parser.add_argument("--mode", choices=sorted(MODE_PRESETS), default="fast")
     parser.add_argument("--minimum-confidence", type=float, default=62)
     parser.add_argument("--seed", type=int, default=7)
@@ -102,11 +121,21 @@ def main() -> None:
 
     references = load_references(project_root)
     limits = load_limits(project_root)
-    selected = select_references(references, args)
-    results = [
-        validate_reference(reference, references, limits, args)
-        for reference in selected
-    ]
+    rng = random.Random(args.seed)
+    trials = build_trials(references, args, rng)
+    results = []
+    for trial in trials:
+        results.append(
+            validate_reference(
+                trial["reference"],
+                references,
+                limits,
+                args,
+                seconds=trial["seconds"],
+                rng=rng,
+                trial_number=trial["trial"],
+            )
+        )
 
     passed = [result for result in results if result["passed"]]
     failed = [result for result in results if not result["passed"]]
@@ -118,8 +147,16 @@ def main() -> None:
 
     for result in results:
         status = "OK" if result["passed"] else "FALLO"
-        print(f"[{status}] {result['expected_name']}")
+        prefix = f"Ensayo {result['trial']}: " if result["trial"] else ""
+        print(f"[{status}] {prefix}{result['expected_name']}")
         print(f"  Esperado: {result['expected_file']}")
+        print(
+            f"  Fragmento: {result['seconds']:.1f} s "
+            f"desde {result['startSeconds']:.1f} s "
+            f"({result['peaksCount']} golpes, {result['fingerprintsCount']} fingerprints)"
+        )
+        if result["attempts"] > 1:
+            print(f"  Reintentos hasta captura usable: {result['attempts']}")
         if result["usable"]:
             print(
                 "  Mejor: "
@@ -184,14 +221,69 @@ def select_references(references: list[dict], args: argparse.Namespace) -> list[
     return [rng.choice(references)]
 
 
+def build_trials(references: list[dict], args: argparse.Namespace, rng: random.Random) -> list[dict]:
+    selected = select_references(references, args)
+    run_count = max(1, args.runs)
+    if args.file or args.all:
+        if run_count == 1:
+            return [
+                {"trial": index + 1 if len(selected) > 1 else 0, "reference": reference, "seconds": args.seconds}
+                for index, reference in enumerate(selected)
+            ]
+        base_references = selected
+    else:
+        base_references = references
+
+    trials = []
+    for trial in range(1, run_count + 1):
+        reference = rng.choice(base_references)
+        trials.append(
+            {
+                "trial": trial,
+                "reference": reference,
+                "seconds": choose_trial_seconds(args, rng),
+            }
+        )
+    return trials
+
+
+def choose_trial_seconds(args: argparse.Namespace, rng: random.Random) -> float:
+    minimum = args.min_seconds if args.min_seconds is not None else args.seconds
+    maximum = args.max_seconds if args.max_seconds is not None else args.seconds
+    if maximum < minimum:
+        minimum, maximum = maximum, minimum
+    if maximum == minimum:
+        return float(minimum)
+    return rng.uniform(minimum, maximum)
+
+
 def validate_reference(
     reference: dict,
     all_references: list[dict],
     limits: dict,
     args: argparse.Namespace,
+    seconds: float | None = None,
+    rng: random.Random | None = None,
+    trial_number: int = 0,
 ) -> dict:
-    capture = build_capture_from_reference(reference, args.seconds)
-    usable, reason = is_usable_capture(capture, limits)
+    capture = None
+    usable = False
+    reason = ""
+    attempts = max(1, args.max_attempts if args.require_usable else 1)
+    for attempt in range(1, attempts + 1):
+        capture = build_capture_from_reference(
+            reference,
+            seconds if seconds is not None else args.seconds,
+            rng=rng,
+            random_segment=args.random_segments or args.runs > 1,
+            active_segment=args.active_segments,
+        )
+        usable, reason = is_usable_capture(capture, limits)
+        if usable or not args.require_usable:
+            break
+
+    if capture is None:
+        raise RuntimeError("No se pudo construir la captura simulada")
     matches = compare_against_references(capture, all_references, limits, args.mode) if usable else []
     best = matches[0] if matches else None
     reliable = bool(best and is_reliable_match(best, limits, args.minimum_confidence))
@@ -216,16 +308,28 @@ def validate_reference(
             }
             for match in matches
         ],
+        "trial": trial_number,
+        "seconds": capture["requestedSeconds"],
+        "startSeconds": capture["startSeconds"],
+        "peaksCount": capture["peaksCount"],
+        "fingerprintsCount": capture["fingerprintsCount"],
+        "attempts": attempt,
     }
 
 
-def build_capture_from_reference(reference: dict, seconds: float) -> dict:
+def build_capture_from_reference(
+    reference: dict,
+    seconds: float,
+    rng: random.Random | None = None,
+    random_segment: bool = False,
+    active_segment: bool = False,
+) -> dict:
     features = reference["features"]
     hop_seconds = float(features.get("hopSeconds") or 0.04644)
     window_length = max(4, round(seconds / hop_seconds))
     onset_series = features.get("onsetSeries") or features.get("onset") or []
     envelope_series = features.get("envelopeSeries") or features.get("envelope") or []
-    start = choose_segment_start(onset_series, window_length)
+    start = choose_segment_start(onset_series, window_length, rng, random_segment, active_segment)
     end = min(len(onset_series), start + window_length)
 
     onset = list(onset_series[start:end])
@@ -271,12 +375,30 @@ def build_capture_from_reference(reference: dict, seconds: float) -> dict:
             onset_profile["contrast"],
             rhythmic_stability,
         ),
+        "requestedSeconds": seconds,
+        "startSeconds": start * hop_seconds,
     }
 
 
-def choose_segment_start(onset: list[float], window_length: int) -> int:
+def choose_segment_start(
+    onset: list[float],
+    window_length: int,
+    rng: random.Random | None = None,
+    random_segment: bool = False,
+    active_segment: bool = False,
+) -> int:
     if len(onset) <= window_length:
         return 0
+
+    if active_segment:
+        random_source = rng or random.Random()
+        candidates = active_segment_starts(onset, window_length)
+        if candidates:
+            return random_source.choice(candidates)
+
+    if random_segment:
+        random_source = rng or random.Random()
+        return random_source.randint(0, len(onset) - window_length)
 
     best_start = 0
     best_energy = -1.0
@@ -287,6 +409,27 @@ def choose_segment_start(onset: list[float], window_length: int) -> int:
             best_energy = energy
             best_start = start
     return best_start
+
+
+def active_segment_starts(onset: list[float], window_length: int) -> list[int]:
+    stride = max(1, window_length // 4)
+    scored = []
+    for start in range(0, len(onset) - window_length + 1, stride):
+        window = onset[start : start + window_length]
+        energy = sum(window)
+        strong_bins = sum(1 for value in window if value >= 0.18)
+        scored.append((start, energy, strong_bins))
+
+    if not scored:
+        return []
+
+    max_energy = max(item[1] for item in scored)
+    min_energy = max_energy * 0.35
+    return [
+        start
+        for start, energy, strong_bins in scored
+        if energy >= min_energy and strong_bins >= 2
+    ]
 
 
 def is_usable_capture(features: dict, limits: dict) -> tuple[bool, str]:

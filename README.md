@@ -318,6 +318,12 @@ Validar toda la biblioteca:
 python3 scripts/validate_detection.py --all
 ```
 
+Hacer 5 ensayos aleatorios con fragmentos de 4 a 8 segundos:
+
+```bash
+python3 scripts/validate_detection.py --runs 5 --min-seconds 4 --max-seconds 8 --active-segments --require-usable
+```
+
 Esta prueba no usa el microfono. Toma un fragmento simulado de cada MP3, lo compara contra la biblioteca y comprueba que la mejor coincidencia sea el mismo archivo.
 
 Comprobacion rapida de CSS:
