@@ -81,6 +81,20 @@ Para cambiarla sin tocar codigo:
 COFRABEAT_ADMIN_PASSWORD="otra-clave" python3 ./scripts/serve_app.py --host 0.0.0.0 --port 8000
 ```
 
+### GitHub Pages
+
+En GitHub Pages no hay backend Python ni endpoints `/api/admin/*`. Por eso la app permite abrir la seccion de administracion como demo publica, sin pedir contrasena.
+
+En esa version:
+
+- se puede ver la zona admin
+- se pueden probar filtros, fichas y organizacion
+- los cambios se guardan solo en el navegador del visitante
+- no se modifica `assets/pasos/metadata.json`
+- no se regenera `manifest.json` ni `features.json`
+
+Para administracion real y guardado global, usa `scripts/serve_app.py` en local o en un servidor propio.
+
 ## Biblioteca De Toques
 
 ### Base Comun

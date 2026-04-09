@@ -33,6 +33,19 @@
 - `assets/pasos/features.json`: huellas comunes generadas.
 - `assets/pasos/metadata.json`: nombres, etiquetas y notas globales.
 
+## Modo GitHub Pages
+
+GitHub Pages es estatico. No ejecuta `scripts/serve_app.py` ni expone `/api/admin/*`.
+
+Por decision de producto, en `*.github.io` la zona de administracion se muestra como demo publica sin contrasena. En ese modo:
+
+- no existe sesion admin real
+- los cambios de fichas se guardan solo en `IndexedDB`
+- no se puede escribir `assets/pasos/metadata.json`
+- no se puede regenerar la biblioteca comun
+
+La administracion real sigue siendo local o de servidor propio mediante `scripts/serve_app.py`.
+
 ## Detector
 
 El detector se divide en tres fases:
@@ -69,6 +82,7 @@ Si una captura no supera las fases 2 o 3, se muestra `Sin toque detectable` o `S
 
 - No guardar la contrasena de administracion en `app.js`.
 - No volver a `window.alert()` para errores de UI; usar toast/modal integrado.
+- Mantener GitHub Pages como demo estatica sin guardado global.
 - No cachear agresivamente `manifest.json` ni `features.json`.
 - Mantener fallback si `features.json` falla.
 - Probar siempre silencio, ruido y toque real despues de tocar el detector.

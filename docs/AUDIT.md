@@ -17,6 +17,7 @@ Puntos ya corregidos:
 - La app no debe mostrar candidatos cuando la captura es ruido o no hay evidencia.
 - La biblioteca comun se regenera desde `assets/pasos`.
 - Los metadatos globales se guardan en `assets/pasos/metadata.json`.
+- En GitHub Pages la zona admin se muestra como demo publica sin guardado global.
 
 ## Alto
 
@@ -54,6 +55,7 @@ Puntos de calidad visual ya tratados:
 - GitHub normal acepta los mp3 actuales por tamano, pero no es ideal para bibliotecas grandes.
 - En moviles, el microfono puede requerir HTTPS si se accede por IP local.
 - La deteccion depende de calidad de audio y cercania al tambor.
+- En GitHub Pages cualquier visitante puede ver la zona admin, pero no puede persistir cambios globales.
 
 ## Validacion Ejecutada
 

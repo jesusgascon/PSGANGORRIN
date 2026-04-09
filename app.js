@@ -43,6 +43,7 @@ const DB_STORE_REFERENCES = "references";
 const DB_STORE_METADATA = "metadata";
 const DECODE_TIMEOUT_MS = 12000;
 const AUDIO_WORKLET_MODULE = "./audio-recorder-worklet.js";
+const GITHUB_PAGES_HOST_SUFFIX = ".github.io";
 
 const MODE_PRESETS = {
   fast: {
@@ -522,6 +523,11 @@ async function syncPersistentReference(reference) {
       if (saved) {
         return;
       }
+    } else if (isStaticPublicDemo()) {
+      showAdminMetadataStatus(
+        "Vista publica: los cambios se guardan solo en este navegador.",
+        false,
+      );
     }
     await saveReferenceMetadata(reference);
   }
@@ -799,9 +805,14 @@ async function toggleMode() {
   }
 
   if (!canUseAdminApi()) {
+    if (isStaticPublicDemo()) {
+      enterStaticAdminDemo();
+      return;
+    }
+
     showToast(
       "Abre con servidor",
-      "El modo administrador no funciona desde file://. Inicia el servidor local y vuelve a entrar.",
+      "El modo administrador necesita el servidor local o la demo publica de GitHub Pages.",
       "warning",
     );
     return;
@@ -863,14 +874,37 @@ async function handleAdminLoginSubmit(event) {
 }
 
 function canUseAdminApi() {
-  return !isFileProtocol() && ["http:", "https:"].includes(window.location.protocol);
+  return (
+    !isFileProtocol() &&
+    !isStaticPublicDemo() &&
+    ["http:", "https:"].includes(window.location.protocol)
+  );
+}
+
+function isStaticPublicDemo() {
+  return window.location.hostname.endsWith(GITHUB_PAGES_HOST_SUFFIX);
+}
+
+function enterStaticAdminDemo() {
+  state.uiMode = "admin";
+  state.adminAuthenticated = false;
+  persistMode();
+  syncModeUi();
+  showToast(
+    "Administracion visible",
+    "En GitHub Pages puedes ver esta seccion, pero los cambios globales no se guardan en el proyecto.",
+    "warning",
+  );
+  showAdminMetadataStatus("Vista publica: edicion solo local en este navegador.");
 }
 
 async function refreshAdminSession() {
   if (!canUseAdminApi()) {
     state.adminAuthenticated = false;
-    state.uiMode = "user";
-    persistMode();
+    if (state.uiMode === "admin" && !isStaticPublicDemo()) {
+      state.uiMode = "user";
+      persistMode();
+    }
     return;
   }
 
@@ -2893,6 +2927,12 @@ function renderRuntimeInfo() {
     elements.runtimeInfo.hidden = false;
     elements.runtimeInfo.textContent =
       `Entorno: ${window.location.protocol}//${window.location.host || "(sin host)"}`;
+    return;
+  }
+
+  if (isStaticPublicDemo()) {
+    elements.runtimeInfo.hidden = false;
+    elements.runtimeInfo.textContent = "GitHub Pages · demo publica";
   }
 }
 
