@@ -27,39 +27,47 @@ MATCHES_LIMIT = 4
 MODE_PRESETS = {
     "fast": {
         "fingerprint": 0.32,
-        "rhythm": 0.28,
+        "rhythm": 0.22,
         "envelope": 0.08,
         "interval": 0.16,
         "density": 0.06,
         "tempo": 0.06,
         "peaks": 0.04,
+        "spectral": 0.06,
+        "flux": 0.06,
     },
     "field": {
-        "fingerprint": 0.16,
-        "rhythm": 0.34,
-        "envelope": 0.18,
-        "interval": 0.2,
+        "fingerprint": 0.08,
+        "rhythm": 0.26,
+        "envelope": 0.14,
+        "interval": 0.16,
         "density": 0.04,
         "tempo": 0.06,
         "peaks": 0.02,
+        "spectral": 0.14,
+        "flux": 0.1,
     },
     "balanced": {
         "fingerprint": 0.36,
-        "rhythm": 0.24,
+        "rhythm": 0.18,
         "envelope": 0.08,
         "interval": 0.18,
         "density": 0.06,
         "tempo": 0.06,
         "peaks": 0.02,
+        "spectral": 0.06,
+        "flux": 0.06,
     },
     "strict": {
         "fingerprint": 0.42,
-        "rhythm": 0.2,
+        "rhythm": 0.16,
         "envelope": 0.06,
         "interval": 0.2,
         "density": 0.04,
         "tempo": 0.06,
         "peaks": 0.02,
+        "spectral": 0.04,
+        "flux": 0.04,
     },
 }
 
@@ -377,7 +385,9 @@ def classify_outcome(
     best_file = best["reference"].get("file")
     if ambiguity:
         return "ambiguous"
-    if reliable and best_file == expected_file:
+    if not reliable:
+        return "low_confidence"
+    if best_file == expected_file:
         return "confirmed"
     if best_file == expected_file:
         return "low_confidence"
@@ -396,11 +406,13 @@ def build_capture_from_reference(
     window_length = max(4, round(seconds / hop_seconds))
     onset_series = features.get("onsetSeries") or features.get("onset") or []
     envelope_series = features.get("envelopeSeries") or features.get("envelope") or []
+    spectral_flux_series = features.get("spectralFluxSeries") or features.get("spectralFlux") or []
     start = choose_segment_start(onset_series, window_length, rng, random_segment, active_segment)
     end = min(len(onset_series), start + window_length)
 
     onset = list(onset_series[start:end])
     envelope = list(envelope_series[start:end])
+    spectral_flux = list(spectral_flux_series[start:end])
     peak_times = [
         float(time) - start * hop_seconds
         for time in features.get("peakTimes", [])
@@ -435,6 +447,9 @@ def build_capture_from_reference(
         "onsetContrast": onset_profile["contrast"],
         "onsetPeakMean": onset_profile["peakMean"],
         "rhythmicStability": rhythmic_stability,
+        "spectralProfile": list(features.get("spectralProfile") or []),
+        "spectralFlux": resample_vector(spectral_flux, 96),
+        "spectralFluxSeries": spectral_flux,
         "signalQuality": estimate_signal_quality(
             stats,
             len(peak_indexes),
@@ -528,7 +543,7 @@ def compare_against_references(
     for reference in references:
         variants = build_reference_feature_variants(reference)
         scored.append(
-            min(
+            sorted(
                 (
                     score_reference_variant(
                         input_features,
@@ -540,25 +555,48 @@ def compare_against_references(
                     )
                     for variant in variants
                 ),
-                key=lambda item: item["distance"],
-            )
+                key=lambda item: variant_sort_key(item, mode_key),
+            )[0]
         )
 
-    scored.sort(key=lambda item: item["distance"])
-    best = scored[0]["distance"] if scored else 1
-    second = scored[1]["distance"] if len(scored) > 1 else best + 0.1
+    scored.sort(key=lambda item: variant_sort_key(item, mode_key))
+    best = scored[0]["fieldRankingScore"] if scored and mode_key == "field" else scored[0]["distance"] if scored else 1
+    second = (
+        scored[1]["fieldRankingScore"]
+        if len(scored) > 1 and mode_key == "field"
+        else scored[1]["distance"]
+        if len(scored) > 1
+        else max(0, best - 0.1)
+        if mode_key == "field"
+        else best + 0.1
+    )
 
     matches = []
     for index, item in enumerate(scored):
         separation_boost = (
             max(0, min(8, (second - best) * 36))
-            if index == 0 and item["evidenceScore"] >= limit_for(limits, "minMatchEvidence", mode_key)
+            if mode_key != "field"
+            and index == 0
+            and item["evidenceScore"] >= limit_for(limits, "minMatchEvidence", mode_key)
             else 0
         )
         item["confidence"] = round(clamp(item["signalAdjustedSimilarity"] * 100 + separation_boost, 0, 98))
         matches.append(item)
     matches.sort(key=lambda item: (-item["confidence"], item["distance"]))
     return matches[:MATCHES_LIMIT]
+
+
+def variant_sort_key(item: dict, mode_key: str) -> tuple:
+    if mode_key == "field":
+        diagnostics = item.get("diagnostics", {})
+        return (
+            -item.get("fieldRankingScore", 0),
+            -diagnostics.get("patternScore", 0),
+            -diagnostics.get("timbreScore", 0),
+            -item.get("evidenceScore", 0),
+            item["distance"],
+        )
+    return (item["distance"],)
 
 
 def build_reference_feature_variants(reference: dict) -> list[dict]:
@@ -618,6 +656,16 @@ def score_reference_variant(
     fingerprint_distance = 1 - fingerprint_match["similarity"]
     rhythm_distance = 1 - rhythm_match["similarity"]
     envelope_distance = 1 - envelope_match["similarity"]
+    spectral_flux_match = best_subsequence_match(
+        input_features.get("spectralFluxSeries", []),
+        reference_features.get("spectralFluxSeries", []),
+        rhythm_match["offset"],
+        rhythm_match["windowLength"],
+    )
+    spectral_distance = vector_distance(
+        input_features.get("spectralProfile", []),
+        reference_features.get("spectralProfile", []),
+    )
     interval_distance = vector_distance(input_features["intervals"], reference_features["intervals"])
     density_distance = abs(input_features["density"] - reference_features["density"])
     peaks_distance = abs(input_features["peakRate"] - reference_features["peakRate"]) / 8
@@ -634,24 +682,30 @@ def score_reference_variant(
         + density_distance * weights["density"]
         + tempo_distance * weights["tempo"]
         + peaks_distance * weights["peaks"]
+        + spectral_distance * weights["spectral"]
+        + (1 - spectral_flux_match["similarity"]) * weights["flux"]
     )
     absolute_similarity = clamp(1 - distance / 1.1, 0, 1)
-    evidence_score = estimate_match_evidence(
-        input_features,
-        rhythm_match,
-        fingerprint_match,
-        absolute_similarity,
-        limits,
-        mode_key,
-    )
     diagnostics = build_match_diagnostics(
         rhythm_match,
         envelope_match,
+        spectral_flux_match,
         fingerprint_match,
         interval_distance,
         density_distance,
+        spectral_distance,
         tempo_distance,
         peaks_distance,
+        mode_key,
+    )
+    evidence_score = estimate_match_evidence(
+        input_features,
+        rhythm_match,
+        envelope_match,
+        fingerprint_match,
+        absolute_similarity,
+        diagnostics,
+        limits,
         mode_key,
     )
     adjusted_evidence = (
@@ -659,11 +713,31 @@ def score_reference_variant(
         if mode_key == "field"
         else evidence_score
     )
+    field_pattern_lift = (
+        clamp(0.84 + diagnostics["patternScore"] * 0.14 + diagnostics["timbreScore"] * 0.08, 0.75, 1.08)
+        if mode_key == "field"
+        else 1
+    )
     signal_adjusted_similarity = (
         absolute_similarity
         * clamp(input_features["signalQuality"], 0, 1)
         * adjusted_evidence
         * (1 - diagnostics["microphonePenalty"])
+        * field_pattern_lift
+    )
+    field_ranking_score = (
+        clamp(
+            signal_adjusted_similarity * 0.44
+            + diagnostics["patternScore"] * 0.22
+            + diagnostics["timbreScore"] * 0.18
+            + diagnostics["rhythmSimilarity"] * 0.06
+            + diagnostics["envelopeSimilarity"] * 0.05
+            + diagnostics["spectralSimilarity"] * 0.05,
+            0,
+            1,
+        )
+        if mode_key == "field"
+        else clamp(1 - distance, 0, 1)
     )
     return {
         "reference": reference,
@@ -677,6 +751,7 @@ def score_reference_variant(
         "distance": distance,
         "absoluteSimilarity": absolute_similarity,
         "signalAdjustedSimilarity": signal_adjusted_similarity,
+        "fieldRankingScore": field_ranking_score,
         "evidenceScore": adjusted_evidence,
         "rawEvidenceScore": evidence_score,
         "diagnostics": diagnostics,
@@ -693,22 +768,28 @@ def score_reference_variant(
 def build_match_diagnostics(
     rhythm_match: dict,
     envelope_match: dict,
+    spectral_flux_match: dict,
     fingerprint_match: dict,
     interval_distance: float,
     density_distance: float,
+    spectral_distance: float,
     tempo_distance: float,
     peaks_distance: float,
     mode_key: str,
 ) -> dict:
     interval_similarity = clamp(1 - interval_distance, 0, 1)
     density_similarity = clamp(1 - density_distance, 0, 1)
+    spectral_similarity = clamp(1 - spectral_distance, 0, 1)
+    flux_similarity = spectral_flux_match["similarity"]
     tempo_similarity = clamp(1 - tempo_distance, 0, 1)
     peaks_similarity = clamp(1 - peaks_distance, 0, 1)
     fingerprint_strength = clamp(fingerprint_match["similarity"] / 0.35, 0, 1)
+    timbre_score = clamp(spectral_similarity * 0.6 + flux_similarity * 0.4, 0, 1)
     pattern_score = clamp(
-        rhythm_match["similarity"] * 0.36
-        + envelope_match["similarity"] * 0.3
-        + interval_similarity * 0.22
+        rhythm_match["similarity"] * 0.3
+        + envelope_match["similarity"] * 0.24
+        + interval_similarity * 0.18
+        + timbre_score * 0.18
         + tempo_similarity * 0.07
         + peaks_similarity * 0.05,
         0,
@@ -731,6 +812,9 @@ def build_match_diagnostics(
         "fingerprintStrength": fingerprint_strength,
         "intervalSimilarity": interval_similarity,
         "densitySimilarity": density_similarity,
+        "spectralSimilarity": spectral_similarity,
+        "spectralFluxSimilarity": flux_similarity,
+        "timbreScore": timbre_score,
         "tempoSimilarity": tempo_similarity,
         "peaksSimilarity": peaks_similarity,
         "patternScore": pattern_score,
@@ -741,8 +825,10 @@ def build_match_diagnostics(
 def estimate_match_evidence(
     input_features: dict,
     rhythm_match: dict,
+    envelope_match: dict,
     fingerprint_match: dict,
     absolute_similarity: float,
+    diagnostics: dict,
     limits: dict,
     mode_key: str,
 ) -> float:
@@ -754,7 +840,25 @@ def estimate_match_evidence(
     )
     fingerprint_score = clamp(fingerprint_match["similarity"] / 0.35, 0, 1)
     rhythm_score = clamp(rhythm_match["similarity"] / 0.72, 0, 1)
+    envelope_score = clamp(envelope_match["similarity"] / 0.72, 0, 1)
     absolute_score = clamp(absolute_similarity / 0.62, 0, 1)
+    if mode_key == "field":
+        return clamp(
+            diagnostics["patternScore"] * 0.26
+            + diagnostics["timbreScore"] * 0.18
+            + rhythm_score * 0.12
+            + envelope_score * 0.11
+            + diagnostics["intervalSimilarity"] * 0.1
+            + diagnostics["spectralSimilarity"] * 0.08
+            + diagnostics["spectralFluxSimilarity"] * 0.07
+            + absolute_score * 0.05
+            + input_features["rhythmicStability"] * 0.05
+            + fingerprint_score * 0.04
+            + vote_score * 0.02,
+            0,
+            1,
+        )
+
     return clamp(
         fingerprint_score * 0.28
         + vote_score * 0.24
@@ -767,15 +871,34 @@ def estimate_match_evidence(
 
 
 def is_reliable_match(match: dict, limits: dict, minimum_confidence: float, mode_key: str) -> bool:
-    return (
-        match["confidence"] >= max(limit_for(limits, "minMatchConfidence", mode_key), minimum_confidence)
-        and match["absoluteSimilarity"] >= limit_for(limits, "minMatchAbsoluteSimilarity", mode_key)
-        and match["evidenceScore"] >= limit_for(limits, "minMatchEvidence", mode_key)
-        and match["alignment"]["fingerprintVotes"] >= limit_for(limits, "minFingerprintVotes", mode_key)
+    diagnostics = match.get("diagnostics", {})
+    minimum_confirmation = max(limit_for(limits, "minMatchConfidence", mode_key), minimum_confidence)
+    has_fingerprint_support = (
+        match["alignment"]["fingerprintVotes"] >= limit_for(limits, "minFingerprintVotes", mode_key)
         and (
             match["alignment"]["fingerprintSimilarity"] >= limit_for(limits, "minFingerprintSimilarity", mode_key)
             or match["alignment"]["similarity"] >= limit_for(limits, "minRhythmSimilarity", mode_key)
         )
+    )
+    has_strong_field_pattern = (
+        mode_key == "field"
+        and match["alignment"]["fingerprintVotes"] >= 2
+        and diagnostics.get("patternScore", 0) >= 0.84
+        and diagnostics.get("rhythmSimilarity", 0) >= 0.78
+        and diagnostics.get("envelopeSimilarity", 0) >= 0.78
+        and diagnostics.get("intervalSimilarity", 0) >= 0.62
+        and diagnostics.get("timbreScore", 0) >= 0.74
+    )
+    confirmation_confidence = (
+        max(minimum_confirmation, 55)
+        if mode_key == "field" and not has_strong_field_pattern
+        else minimum_confirmation
+    )
+    return (
+        match["confidence"] >= confirmation_confidence
+        and match["absoluteSimilarity"] >= limit_for(limits, "minMatchAbsoluteSimilarity", mode_key)
+        and match["evidenceScore"] >= limit_for(limits, "minMatchEvidence", mode_key)
+        and (has_fingerprint_support or has_strong_field_pattern)
     )
 
 
@@ -795,11 +918,23 @@ def get_match_ambiguity(
     )
     for candidate in matches[1:]:
         margin = best["confidence"] - candidate["confidence"]
+        diagnostics = candidate.get("diagnostics", {})
+        has_plausible_votes = (
+            candidate["alignment"]["fingerprintVotes"]
+            >= max(2, limit_for(limits, "minFingerprintVotes", mode_key) - 2)
+        )
+        has_plausible_field_pattern = (
+            mode_key == "field"
+            and candidate["alignment"]["fingerprintVotes"] >= 2
+            and diagnostics.get("patternScore", 0) >= 0.8
+            and diagnostics.get("rhythmSimilarity", 0) >= 0.74
+            and diagnostics.get("envelopeSimilarity", 0) >= 0.72
+            and diagnostics.get("timbreScore", 0) >= 0.7
+        )
         candidate_is_plausible = (
             candidate["confidence"] >= minimum_plausible_confidence
             and candidate["evidenceScore"] >= limit_for(limits, "minMatchEvidence", mode_key)
-            and candidate["alignment"]["fingerprintVotes"]
-            >= max(2, limit_for(limits, "minFingerprintVotes", mode_key) - 2)
+            and (has_plausible_votes or has_plausible_field_pattern)
         )
         if margin <= limit_for(limits, "minTopMatchMargin", mode_key) and candidate_is_plausible:
             return candidate

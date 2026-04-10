@@ -28,9 +28,10 @@ FINGERPRINT_MAX_NEIGHBORS = 5
 FINGERPRINT_MAX_INTERVAL_SECONDS = 3.2
 FINGERPRINT_INTERVAL_STEP = 0.05
 FEATURE_SAMPLE_RATE = 22050
-FEATURE_SCHEMA_VERSION = 3
+FEATURE_SCHEMA_VERSION = 4
 REFERENCE_SEGMENT_SECONDS = (8, 10, 12)
 MAX_REFERENCE_SEGMENTS = 8
+SPECTRAL_BAND_FREQUENCIES = (90, 140, 220, 320, 450, 650, 900, 1300)
 REQUIRED_FEATURE_KEYS = {
     "schemaVersion",
     "fingerprintsCount",
@@ -38,6 +39,9 @@ REQUIRED_FEATURE_KEYS = {
     "onsetPeakMean",
     "rhythmicStability",
     "signalQuality",
+    "spectralProfile",
+    "spectralFlux",
+    "spectralFluxSeries",
     "strongSegments",
 }
 
@@ -194,6 +198,8 @@ def write_features(project_root: Path) -> Path | None:
         except (subprocess.SubprocessError, ValueError, OSError) as error:
             references.append({**entry, "error": str(error)})
 
+    references = enrich_reference_segments(references)
+
     features_path.write_text(
         json.dumps({"references": references}, ensure_ascii=False, separators=(",", ":")) + "\n",
         encoding="utf-8",
@@ -265,6 +271,7 @@ def analyse_samples(samples: array, sample_rate: int, include_segments: bool = T
     onset_profile = measure_onset_profile(onset, peak_indexes)
     rhythmic_stability = estimate_rhythmic_stability(peak_times)
     fingerprints = build_rhythm_fingerprints(peak_times)
+    spectral_profile, spectral_flux_series = build_spectral_signature(samples, sample_rate)
 
     features = {
         "schemaVersion": FEATURE_SCHEMA_VERSION,
@@ -297,6 +304,9 @@ def analyse_samples(samples: array, sample_rate: int, include_segments: bool = T
             ),
             6,
         ),
+        "spectralProfile": round_values(spectral_profile),
+        "spectralFlux": round_values(resample_vector(spectral_flux_series, ENVELOPE_BINS)),
+        "spectralFluxSeries": round_values(spectral_flux_series),
     }
     if include_segments:
         features["strongSegments"] = build_strong_segments(samples, sample_rate)
@@ -345,6 +355,7 @@ def build_strong_segments(samples: array, sample_rate: int) -> list[dict]:
                 {
                     "startSeconds": round(start_seconds, 3),
                     "durationSeconds": round((end_sample - start_sample) / sample_rate, 3),
+                    "baseScore": round(score, 6),
                     "score": round(score, 6),
                     "features": segment_features,
                 }
@@ -478,6 +489,68 @@ def build_interval_profile(peak_indexes: list[int], sample_rate: int) -> list[fl
     return normalize_array(histogram)
 
 
+def build_spectral_signature(samples: array, sample_rate: int) -> tuple[list[float], list[float]]:
+    if len(samples) < ANALYSIS_WINDOW:
+        size = len(SPECTRAL_BAND_FREQUENCIES)
+        return [0.0] * size, [0.0] * ENVELOPE_BINS
+
+    hop = ANALYSIS_WINDOW // 2
+    scale = 32768
+    previous_bands = None
+    band_frames: list[list[float]] = []
+    flux_values: list[float] = []
+
+    for start in range(0, max(0, len(samples) - ANALYSIS_WINDOW), hop):
+        frame = [sample / scale for sample in samples[start : start + ANALYSIS_WINDOW]]
+        band_values = [goertzel_magnitude(frame, sample_rate, frequency) for frequency in SPECTRAL_BAND_FREQUENCIES]
+        band_values = normalize_array(band_values)
+        band_frames.append(band_values)
+        if previous_bands is None:
+            flux_values.append(0.0)
+        else:
+            flux_values.append(
+                sum(max(0.0, current - previous) for current, previous in zip(band_values, previous_bands))
+                / max(1, len(band_values))
+            )
+        previous_bands = band_values
+
+    if not band_frames:
+        size = len(SPECTRAL_BAND_FREQUENCIES)
+        return [0.0] * size, [0.0] * ENVELOPE_BINS
+
+    profile = []
+    for band_index in range(len(SPECTRAL_BAND_FREQUENCIES)):
+        profile.append(sum(frame[band_index] for frame in band_frames) / len(band_frames))
+
+    return normalize_array(profile), smooth_vector(normalize_array(flux_values), 2)
+
+
+def goertzel_magnitude(frame: list[float], sample_rate: int, target_frequency: float) -> float:
+    import math
+
+    if not frame or target_frequency <= 0:
+        return 0.0
+
+    frame_size = len(frame)
+    if frame_size < 4:
+        return 0.0
+
+    k = max(1, round(0.5 + (frame_size * target_frequency) / sample_rate))
+    omega = (2.0 * math.pi * k) / frame_size
+    coefficient = 2.0 * math.cos(omega)
+    q0 = 0.0
+    q1 = 0.0
+    q2 = 0.0
+    for sample in frame:
+        q0 = coefficient * q1 - q2 + sample
+        q2 = q1
+        q1 = q0
+
+    real = q1 - q2 * math.cos(omega)
+    imaginary = q2 * math.sin(omega)
+    return (real * real + imaginary * imaginary) ** 0.5
+
+
 def estimate_tempo(peak_indexes: list[int], sample_rate: int) -> float:
     if len(peak_indexes) < 2:
         return 0.0
@@ -578,6 +651,140 @@ def estimate_signal_quality(
         + contrast_score * 0.18
         + stability_score * 0.12
     )
+
+
+def enrich_reference_segments(references: list[dict]) -> list[dict]:
+    ready_references = [reference for reference in references if isinstance(reference.get("features"), dict)]
+    if len(ready_references) < 2:
+        return references
+
+    for reference in ready_references:
+        features = reference["features"]
+        segments = features.get("strongSegments") or []
+        if not segments:
+            continue
+
+        rescored = []
+        for segment in segments:
+            segment_features = segment.get("features")
+            if not isinstance(segment_features, dict):
+                continue
+
+            distinctiveness = estimate_segment_distinctiveness(
+                segment_features,
+                reference.get("file"),
+                ready_references,
+            )
+            base_score = float(segment.get("baseScore", segment.get("score", 0.0)) or 0.0)
+            rescored.append(
+                {
+                    **segment,
+                    "baseScore": round(base_score, 6),
+                    "distinctiveness": round(distinctiveness, 6),
+                    "score": round(base_score + distinctiveness * 24, 6),
+                }
+            )
+
+        rescored.sort(
+            key=lambda item: (item.get("score", 0.0), item.get("distinctiveness", 0.0)),
+            reverse=True,
+        )
+        selected = []
+        for segment in rescored:
+            if all(abs(segment["startSeconds"] - existing["startSeconds"]) > 4 for existing in selected):
+                selected.append(segment)
+            if len(selected) >= MAX_REFERENCE_SEGMENTS:
+                break
+        features["strongSegments"] = selected
+
+    return references
+
+
+def estimate_segment_distinctiveness(segment_features: dict, owner_file: str | None, references: list[dict]) -> float:
+    max_similarity = 0.0
+    for reference in references:
+        if reference.get("file") == owner_file:
+            continue
+        for variant_features in iter_reference_variant_features(reference):
+            similarity = measure_reference_similarity(segment_features, variant_features)
+            if similarity > max_similarity:
+                max_similarity = similarity
+    return clamp(1 - max_similarity, 0.0, 1.0)
+
+
+def iter_reference_variant_features(reference: dict) -> list[dict]:
+    features = reference.get("features")
+    if not isinstance(features, dict):
+        return []
+
+    variants = [features]
+    segments = features.get("strongSegments") or []
+    for segment in segments[:3]:
+        if isinstance(segment, dict) and isinstance(segment.get("features"), dict):
+            variants.append(segment["features"])
+    return variants
+
+
+def measure_reference_similarity(left: dict, right: dict) -> float:
+    onset_similarity = clamp(1 - vector_distance(left.get("onset", []), right.get("onset", [])), 0.0, 1.0)
+    envelope_similarity = clamp(1 - vector_distance(left.get("envelope", []), right.get("envelope", [])), 0.0, 1.0)
+    interval_similarity = clamp(1 - vector_distance(left.get("intervals", []), right.get("intervals", [])), 0.0, 1.0)
+    spectral_similarity = clamp(
+        1 - vector_distance(left.get("spectralProfile", []), right.get("spectralProfile", [])),
+        0.0,
+        1.0,
+    )
+    flux_similarity = clamp(
+        1 - vector_distance(left.get("spectralFlux", []), right.get("spectralFlux", [])),
+        0.0,
+        1.0,
+    )
+    tempo_similarity = clamp(
+        1 - abs(float(left.get("tempoEstimate", 0.0)) - float(right.get("tempoEstimate", 0.0))) / 180,
+        0.0,
+        1.0,
+    )
+    density_similarity = clamp(
+        1 - abs(float(left.get("density", 0.0)) - float(right.get("density", 0.0))),
+        0.0,
+        1.0,
+    )
+    fingerprint_similarity = fingerprint_hash_similarity(
+        left.get("fingerprints", []) or [],
+        right.get("fingerprints", []) or [],
+    )
+
+    return clamp(
+        onset_similarity * 0.2
+        + envelope_similarity * 0.18
+        + interval_similarity * 0.16
+        + spectral_similarity * 0.18
+        + flux_similarity * 0.14
+        + fingerprint_similarity * 0.08
+        + tempo_similarity * 0.04
+        + density_similarity * 0.02,
+        0.0,
+        1.0,
+    )
+
+
+def fingerprint_hash_similarity(left: list[dict], right: list[dict]) -> float:
+    left_hashes = {item.get("hash") for item in left if item.get("hash")}
+    right_hashes = {item.get("hash") for item in right if item.get("hash")}
+    if not left_hashes or not right_hashes:
+        return 0.0
+    shared = len(left_hashes & right_hashes)
+    return shared / max(len(left_hashes), len(right_hashes))
+
+
+def vector_distance(left: list[float], right: list[float]) -> float:
+    size = max(len(left), len(right))
+    total = 0.0
+    for index in range(size):
+        a = left[index] if index < len(left) else (left[-1] if left else 0.0)
+        b = right[index] if index < len(right) else (right[-1] if right else 0.0)
+        total += (a - b) ** 2
+    return (total / size) ** 0.5 if size else 0.0
 
 
 def resample_vector(vector: list[float], target_size: int) -> list[float]:

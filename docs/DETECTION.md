@@ -110,6 +110,15 @@ Esto evita que ruido bajo, silencio o audio ambiente pasen a la comparacion.
 
 Cada MP3 se compara usando su huella global y varios segmentos fuertes guardados en `assets/pasos/features.json`. Esos segmentos son ventanas de 8, 10 y 12 segundos elegidas por energia, golpes, fingerprints y calidad ritmica.
 
+Ahora esos segmentos no se ordenan solo por energia. La biblioteca hace una segunda pasada y prioriza tambien los tramos mas distintivos frente al resto de toques. Asi, un segmento fuerte no es solo un tramo intenso, sino un tramo que ayuda mejor a separar un toque de otro.
+
+Cada referencia guarda tambien una segunda huella espectral ligera:
+
+- perfil espectral por bandas
+- flujo espectral a lo largo del tiempo
+
+Esta segunda huella no sustituye la ritmica, pero ayuda a separar toques parecidos cuando cambia el color del golpe o la evolucion energetica del tramo.
+
 Esto ayuda con capturas reales de microfono, porque el usuario normalmente graba solo una parte concreta del toque. Si un segmento fuerte encaja mejor que el archivo completo, la app usa ese segmento como mejor evidencia para esa referencia.
 
 La confianza se penaliza por calidad de senal y evidencia. Ya no se infla solo porque una referencia sea "la menos mala".
@@ -178,5 +187,9 @@ Con esas estadisticas propone variables como:
 - `minTopMatchMargin`
 
 `minTopMatchMargin` evita confirmar un toque cuando el primer y segundo resultado quedan demasiado cerca. Si la diferencia es menor o igual a ese margen, la app muestra resultado ambiguo y pide repetir la escucha.
+
+En el perfil `Micro real`, la decision final no usa la misma formula que una comparacion limpia entre archivos. La app reduce el peso de fingerprints exactos, porque el microfono, el altavoz y la sala deforman la huella. En su lugar da mas peso al patron ritmico, la envolvente, los intervalos entre golpes, el perfil espectral y la coherencia general del tramo captado. Si un candidato gana solo por votos de fingerprint pero no por patron o timbre general, se penaliza.
+
+Tambien se aplica una regla de confirmacion mas prudente: con audio de campo, una coincidencia media no se confirma salvo que tenga patron fuerte o margen claro. Si otro toque queda cerca, el resultado se marca como ambiguo.
 
 Regla practica: si aparecen falsos positivos, subir umbrales de evidencia. Si aparecen demasiados falsos negativos con toques reales claros, bajar ligeramente `minMatchEvidence` o `minRhythmicStability`. Si aparecen confusiones entre dos toques muy parecidos, subir ligeramente `minTopMatchMargin`.

@@ -50,6 +50,8 @@ La app web tambien analiza varias ventanas activas dentro de cada escucha real. 
 
 La biblioteca guarda segmentos fuertes por cada MP3 dentro de `assets/pasos/features.json`. Durante la validacion, cada captura se compara contra la referencia completa y contra esos segmentos. Esto se parece mas a una escucha real, donde solo entra por el microfono una parte del toque.
 
+Ahora esos segmentos fuertes incluyen un factor de distintividad frente al resto de toques. Ademas, la validacion ya incorpora la nueva huella espectral ligera, con perfil por bandas y flujo espectral, para acercarse mas a una escucha por micro real.
+
 Hacer una prueba cruda totalmente aleatoria, incluyendo posibles silencios o partes sin golpes:
 
 ```bash
@@ -66,7 +68,7 @@ Este comando usa la misma logica de tramos activos que la app web y muestra si l
 
 El analisis de capturas reales tambien aplica la misma limpieza suave que la app: centra la senal y atenúa ruido bajo entre golpes, sin amplificar artificialmente capturas debiles.
 
-En modo `field`, el ranking incluye detalle de patron, ritmo, envolvente, intervalos, penalizacion de micro y si la coincidencia viene de la referencia completa o de un segmento fuerte.
+En modo `field`, el ranking incluye detalle de patron, timbre, ritmo, envolvente, intervalos, similitud espectral, flujo espectral, penalizacion de micro y si la coincidencia viene de la referencia completa o de un segmento fuerte.
 
 ## Como Leer El Resultado
 
@@ -159,12 +161,12 @@ Este resultado es preferible a confirmar siempre: cuando dos toques quedan demas
 Ensayo del perfil `Micro real`:
 
 ```text
-Referencias validadas: 120
-Confirmadas correctas: 103
-Ambiguas no confirmadas: 15
-Correctas por debajo del umbral: 2
+Referencias validadas: 400
+Confirmadas correctas: 297
+Ambiguas no confirmadas: 102
+Correctas por debajo del umbral: 1
 Confusiones reales: 0
 Capturas no usables: 0
 ```
 
-El perfil confirma menos casos que el modo rapido, pero mantiene cero confusiones reales en este ensayo y es mas razonable para audio captado por microfono. Las capturas dudosas se clasifican como ambiguas para que la app pida repetir en vez de inventar una coincidencia segura.
+El perfil confirma menos casos que el modo rapido, pero mantiene cero confusiones reales en este ensayo y es mas razonable para audio captado por microfono. Las capturas dudosas se clasifican como ambiguas o no fiables para que la app pida repetir en vez de inventar una coincidencia segura.

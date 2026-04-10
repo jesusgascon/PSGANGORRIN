@@ -228,6 +228,8 @@ Luego compara la captura contra las referencias.
 
 Cada referencia tiene una huella global y varios segmentos fuertes de 8, 10 y 12 segundos guardados en `assets/pasos/features.json`. Asi, una grabacion corta de microfono puede coincidir con la parte concreta del toque que se ha escuchado, no solo con el archivo completo.
 
+Esos segmentos ya no se escogen solo por energia. La biblioteca reordena tambien por distintividad frente al resto de toques, para intentar usar tramos que separen mejor una referencia de otra. Ademas, cada toque guarda una huella espectral ligera por bandas y flujo espectral para ayudar a distinguir patrones ritmicos parecidos.
+
 La app no acepta automaticamente la referencia mas parecida. Primero exige evidencia minima. Esto evita falsos positivos con silencio, ruido o golpes sueltos.
 
 Resultados esperados:
@@ -243,7 +245,7 @@ Para pruebas reproduciendo un MP3 en el ordenador y escuchando con el microfono,
 
 Si la app marca resultado ambiguo o sin deteccion fiable, no significa necesariamente que falle la biblioteca. Normalmente indica que la captura por microfono no llega clara, llega saturada o hay varios toques con patron muy parecido. En ese caso conviene repetir acercando el movil al altavoz/tambor, pero manteniendo distancia suficiente para que no sature.
 
-El perfil `Micro real` pesa menos los fingerprints exactos y da mas importancia al patron de golpes, envolvente e intervalos. Si un candidato gana solo por coincidencias locales pero el patron general no acompaña, se penaliza y la app tiende a dejarlo ambiguo.
+El perfil `Micro real` pesa menos los fingerprints exactos y da mas importancia al patron de golpes, envolvente, intervalos y timbre espectral general. Si un candidato gana solo por coincidencias locales pero el patron o el timbre no acompanan, se penaliza y la app tiende a dejarlo ambiguo.
 
 Mas detalle en:
 

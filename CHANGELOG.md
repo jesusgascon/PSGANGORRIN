@@ -15,6 +15,8 @@
 - Ambiguedad mas estricta: si otro toque queda justo en el margen de seguridad, la app pide repetir en vez de confirmar.
 - Perfil `Micro real` menos dependiente de fingerprints exactos y mas apoyado en patron, envolvente e intervalos.
 - `scripts/analyze_capture.py` muestra detalle de patron, ritmo, envolvente, intervalos, penalizacion de micro y segmento usado.
+- Perfil `Micro real` refinado: la evidencia, seleccion de segmentos y confirmacion final priorizan patron ritmico, envolvente e intervalos; las coincidencias medias quedan como ambiguas o no fiables antes que confirmar un toque incorrecto.
+- Biblioteca refinada con segmentos distintivos por toque y segunda huella espectral ligera; en `Micro real` se usa mas patron+timbre y menos voto bruto de fingerprint.
 
 ## v1.1.0
 

@@ -66,3 +66,5 @@ def test_features_file_is_generated_when_ffmpeg_exists():
     ready = [reference for reference in references if reference.get("features")]
     assert all(reference["features"]["peaksCount"] >= 0 for reference in ready)
     assert all("fingerprints" in reference["features"] for reference in ready)
+    assert all("spectralProfile" in reference["features"] for reference in ready)
+    assert all("spectralFluxSeries" in reference["features"] for reference in ready)

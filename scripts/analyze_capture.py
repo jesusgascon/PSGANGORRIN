@@ -81,6 +81,7 @@ def print_capture_result(capture_path: Path, references: list[dict], limits: dic
     print(f"Calidad: {features['signalQuality']:.3f}")
     print(f"Contraste: {features['onsetContrast']:.3f}")
     print(f"Estabilidad: {features['rhythmicStability']:.3f}")
+    print(f"Timbre espectral: {sum(features.get('spectralProfile', []) or [0]) / max(1, len(features.get('spectralProfile', []) or [1])):.3f}")
     print(f"Tempo: {features['tempoEstimate']:.1f} bpm")
     print(f"Captura usable: {'si' if usable else 'no'}")
 
@@ -112,9 +113,12 @@ def print_capture_result(capture_path: Path, references: list[dict], limits: dic
             f"- evidencia {match['evidenceScore']:.3f} "
             f"- votos {alignment.get('fingerprintVotes', 0)} "
             f"- patron {diagnostics.get('patternScore', 0):.3f} "
+            f"- timbre {diagnostics.get('timbreScore', 0):.3f} "
             f"- ritmo {diagnostics.get('rhythmSimilarity', 0):.3f} "
             f"- envolvente {diagnostics.get('envelopeSimilarity', 0):.3f} "
             f"- intervalos {diagnostics.get('intervalSimilarity', 0):.3f} "
+            f"- espectro {diagnostics.get('spectralSimilarity', 0):.3f} "
+            f"- flujo {diagnostics.get('spectralFluxSimilarity', 0):.3f} "
             f"- penalizacion micro {diagnostics.get('microphonePenalty', 0):.3f} "
             f"- {variant_label}"
         )
@@ -138,7 +142,7 @@ def analyze_best_candidate(
         best = matches[0] if matches else None
         ambiguity = get_match_ambiguity(matches, limits, args.minimum_confidence, args.mode) if best else None
         reliable = bool(best and is_reliable_match(best, limits, args.minimum_confidence, args.mode) and not ambiguity)
-        score = score_candidate(features, best, ambiguity, reliable, order)
+        score = score_candidate(features, best, ambiguity, reliable, order, args.mode)
         candidate = {
             **window,
             "features": features,
@@ -316,21 +320,53 @@ def measure_frames(samples: array) -> list[dict]:
     return frames
 
 
-def score_candidate(features: dict, best: dict | None, ambiguity: dict | None, reliable: bool, order: int) -> float:
+def score_candidate(
+    features: dict,
+    best: dict | None,
+    ambiguity: dict | None,
+    reliable: bool,
+    order: int,
+    mode_key: str,
+) -> float:
     match_score = 0.0
     if best:
-        match_score = (
-            best["confidence"] * 0.45
-            + best["evidenceScore"] * 35
-            + best["absoluteSimilarity"] * 20
-            + min(12, best["alignment"].get("fingerprintVotes", 0) * 0.7)
+        votes = best["alignment"].get("fingerprintVotes", 0)
+        diagnostics = best.get("diagnostics", {})
+        if mode_key == "field":
+            match_score = (
+                best["confidence"] * 0.38
+                + best["evidenceScore"] * 30
+                + best["absoluteSimilarity"] * 14
+                + diagnostics.get("patternScore", 0) * 18
+                + diagnostics.get("timbreScore", 0) * 16
+                + diagnostics.get("rhythmSimilarity", 0) * 8
+                + diagnostics.get("envelopeSimilarity", 0) * 6
+                + diagnostics.get("spectralSimilarity", 0) * 6
+                + diagnostics.get("spectralFluxSimilarity", 0) * 6
+                + min(3, votes * 0.16)
+            )
+        else:
+            match_score = (
+                best["confidence"] * 0.45
+                + best["evidenceScore"] * 35
+                + best["absoluteSimilarity"] * 20
+                + min(12, votes * 0.7)
+            )
+    if mode_key == "field":
+        quality_score = (
+            features["signalQuality"] * 18
+            + features["onsetContrast"] * 12
+            + features["rhythmicStability"] * 8
+            + min(8, features["peaksCount"] * 0.35)
+            + min(4, features["fingerprintsCount"] * 0.04)
         )
-    quality_score = (
-        features["signalQuality"] * 16
-        + features["onsetContrast"] * 10
-        + min(8, features["peaksCount"] * 0.35)
-        + min(8, features["fingerprintsCount"] * 0.08)
-    )
+    else:
+        quality_score = (
+            features["signalQuality"] * 16
+            + features["onsetContrast"] * 10
+            + min(8, features["peaksCount"] * 0.35)
+            + min(8, features["fingerprintsCount"] * 0.08)
+        )
     return match_score + quality_score + (25 if reliable else 0) - (18 if ambiguity else 0) - order * 0.3
 
 
