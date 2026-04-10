@@ -18,6 +18,7 @@
 - Perfil `Micro real` refinado: la evidencia, seleccion de segmentos y confirmacion final priorizan patron ritmico, envolvente e intervalos; las coincidencias medias quedan como ambiguas o no fiables antes que confirmar un toque incorrecto.
 - Biblioteca refinada con segmentos distintivos por toque y segunda huella espectral ligera; en `Micro real` se usa mas patron+timbre y menos voto bruto de fingerprint.
 - Ajuste fino de `Micro real`: mas peso de timbre, menos dependencia de votos cuando el patron no domina, bonificacion por liderazgo conjunto de patron+envolvente+espectro y perfil especial para toques lentos como `Dolor`.
+- Confianza visible ajustada en `Micro real`: cuando un candidato ya gana claro por patron+timbre, la UI muestra un porcentaje algo mas representativo sin relajar la logica real de confirmacion ni de ambiguedad.
 
 ## v1.1.0
 

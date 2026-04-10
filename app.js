@@ -1431,7 +1431,7 @@ function processCapturedSignal(inputSignal, capturedSeconds) {
   updateResult({
     name: bestMatch.reference.name,
     meta: `${formatMatchMeta(bestMatch, features)}${formatWindowDiagnostics(candidate)}`,
-    confidence: bestMatch.confidence,
+    confidence: getVisibleConfidence(bestMatch),
     matches: results,
     analysis: features,
   });
@@ -2737,6 +2737,7 @@ function compareAgainstReferences(inputFeatures, references, modeKey) {
     return {
       ...item,
       confidence,
+      displayConfidence: modeKey === "field" ? getVisibleConfidence(item) : confidence,
     };
   });
   matches.sort((left, right) => right.confidence - left.confidence || left.distance - right.distance);
@@ -3145,6 +3146,31 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+function getVisibleConfidence(match) {
+  const actualConfidence = Number(match?.confidence || 0);
+  const diagnostics = match?.diagnostics || {};
+  if (!match || state.settings.analysisMode !== "field") {
+    return actualConfidence;
+  }
+
+  const hasClearPatternLead =
+    diagnostics.patternScore >= 0.82 &&
+    diagnostics.timbreScore >= 0.68 &&
+    diagnostics.envelopeSimilarity >= 0.78;
+  if (!hasClearPatternLead) {
+    return actualConfidence;
+  }
+
+  const lift = Math.round(
+    diagnostics.patternScore * 3 +
+    diagnostics.timbreScore * 3 +
+    diagnostics.envelopeSimilarity * 2 +
+    (diagnostics.fieldLeadershipBonus || 0) * 40,
+  );
+
+  return Math.max(actualConfidence, Math.min(98, actualConfidence + Math.max(2, Math.min(8, lift))));
+}
+
 function compareRhythmFingerprints(queryFingerprints, targetFingerprints) {
   if (!queryFingerprints?.length || !targetFingerprints?.length) {
     return { similarity: 0, offsetSeconds: 0, votes: 0 };
@@ -3544,6 +3570,7 @@ function renderMatches(matches) {
 
   elements.matchesList.innerHTML = matches
     .map((match, index) => {
+      const visibleConfidence = match.displayConfidence ?? match.confidence;
       const isWeak = match.confidence < state.settings.minimumConfidence;
       return `
         <article class="match-item">
@@ -3554,7 +3581,7 @@ function renderMatches(matches) {
               isWeak ? "Coincidencia débil, revisar patrón" : match.reference.source,
             )}</div>
           </div>
-          <div class="match-score">${match.confidence}%</div>
+          <div class="match-score">${visibleConfidence}%</div>
         </article>
       `;
     })
@@ -3828,7 +3855,7 @@ function pushHistory(bestMatch, analysis, uncertain) {
   const entry = {
     id: crypto.randomUUID(),
     name: uncertain ? `${bestMatch.reference.name} (dudoso)` : bestMatch.reference.name,
-    confidence: bestMatch.confidence,
+    confidence: getVisibleConfidence(bestMatch),
     meta: `${Math.round(analysis.tempoEstimate || 0)} bpm · ${analysis.peaksCount} golpes`,
     timeLabel: new Date().toLocaleString("es-ES", {
       day: "2-digit",
