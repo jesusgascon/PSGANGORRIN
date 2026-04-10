@@ -70,6 +70,12 @@ El analisis de capturas reales tambien aplica la misma limpieza suave que la app
 
 En modo `field`, el ranking incluye detalle de patron, timbre, ritmo, envolvente, intervalos, similitud espectral, flujo espectral, penalizacion de micro y si la coincidencia viene de la referencia completa o de un segmento fuerte.
 
+Tambien muestra:
+
+- `dominio`: cuanto domina el patron general frente al voto bruto de fingerprint
+- `bonus`: bonificacion extra si el candidato lidera a la vez en patron, envolvente y espectro
+- `perfil`: `lento` o `normal`, para saber si se ha activado el ajuste especial de toques lentos
+
 ## Como Leer El Resultado
 
 Salida correcta:
@@ -170,3 +176,14 @@ Capturas no usables: 0
 ```
 
 El perfil confirma menos casos que el modo rapido, pero mantiene cero confusiones reales en este ensayo y es mas razonable para audio captado por microfono. Las capturas dudosas se clasifican como ambiguas o no fiables para que la app pida repetir en vez de inventar una coincidencia segura.
+
+Tras el ajuste fino del perfil `Micro real`, la validacion dirigida mejora especialmente en toques lentos:
+
+```text
+Dolor de la Madre de Dios, 20 ensayos
+17 confirmadas correctas
+3 ambiguas no confirmadas
+0 confusiones reales
+```
+
+Y en `Formacion` se mantiene el criterio conservador: sigue habiendo bastantes ambiguas, pero no aparecen confusiones reales en el ensayo dirigido.

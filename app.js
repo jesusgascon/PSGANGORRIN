@@ -76,7 +76,7 @@ const MODE_PRESETS = {
   },
   field: {
     label: "Micro real",
-    weights: { fingerprint: 0.08, rhythm: 0.26, envelope: 0.14, interval: 0.16, density: 0.04, tempo: 0.06, peaks: 0.02, spectral: 0.14, flux: 0.1 },
+    weights: { fingerprint: 0.06, rhythm: 0.27, envelope: 0.15, interval: 0.17, density: 0.03, tempo: 0.06, peaks: 0.01, spectral: 0.16, flux: 0.09 },
   },
   balanced: {
     label: "Equilibrado",
@@ -2222,16 +2222,17 @@ function scoreCaptureCandidate(features, bestMatch, ambiguity, reliable, order, 
   const votes = bestMatch?.alignment?.fingerprintVotes || 0;
   const matchScore = bestMatch
     ? modeKey === "field"
-      ? bestMatch.confidence * 0.38 +
+      ? bestMatch.confidence * 0.34 +
         bestMatch.evidenceScore * 30 +
-        bestMatch.absoluteSimilarity * 14 +
-        (diagnostics.patternScore || 0) * 18 +
-        (diagnostics.timbreScore || 0) * 16 +
+        bestMatch.absoluteSimilarity * 13 +
+        (diagnostics.patternScore || 0) * 21 +
+        (diagnostics.timbreScore || 0) * 19 +
         (diagnostics.rhythmSimilarity || 0) * 8 +
-        (diagnostics.envelopeSimilarity || 0) * 6 +
-        (diagnostics.spectralSimilarity || 0) * 6 +
-        (diagnostics.spectralFluxSimilarity || 0) * 6 +
-        Math.min(3, votes * 0.16)
+        (diagnostics.envelopeSimilarity || 0) * 8 +
+        (diagnostics.spectralSimilarity || 0) * 8 +
+        (diagnostics.spectralFluxSimilarity || 0) * 7 +
+        (diagnostics.fieldLeadershipBonus || 0) * 18 +
+        Math.min(2.2, votes * 0.11)
       : bestMatch.confidence * 0.45 +
         bestMatch.evidenceScore * 35 +
         bestMatch.absoluteSimilarity * 20 +
@@ -2717,6 +2718,10 @@ function compareAgainstReferences(inputFeatures, references, modeKey) {
       .sort((left, right) => compareVariantScores(left, right, modeKey))[0];
   });
 
+  if (modeKey === "field") {
+    applyFieldLeadershipBonuses(scored);
+  }
+
   scored.sort((left, right) => compareVariantScores(left, right, modeKey));
   const best = modeKey === "field" ? scored[0]?.fieldRankingScore ?? 0 : scored[0]?.distance ?? 1;
   const second = modeKey === "field"
@@ -2741,6 +2746,7 @@ function compareAgainstReferences(inputFeatures, references, modeKey) {
 function compareVariantScores(left, right, modeKey) {
   if (modeKey === "field") {
     return right.fieldRankingScore - left.fieldRankingScore ||
+      (right.diagnostics.fieldLeadershipBonus || 0) - (left.diagnostics.fieldLeadershipBonus || 0) ||
       right.diagnostics.patternScore - left.diagnostics.patternScore ||
       right.diagnostics.timbreScore - left.diagnostics.timbreScore ||
       right.evidenceScore - left.evidenceScore ||
@@ -2781,6 +2787,7 @@ function buildReferenceFeatureVariants(reference) {
 
 function scoreReferenceVariant(inputFeatures, reference, variant, preset, modeKey) {
   const referenceFeatures = variant.features;
+  const slowPatternProfile = isSlowPatternProfile(inputFeatures, referenceFeatures);
   const referenceHopSeconds = referenceFeatures.hopSeconds || inputFeatures.hopSeconds || 0.023;
   const targetWindowLength = Math.max(2, Math.round(inputFeatures.durationSeconds / referenceHopSeconds));
   const rhythmMatch = bestSubsequenceMatch(
@@ -2842,6 +2849,7 @@ function scoreReferenceVariant(inputFeatures, reference, variant, preset, modeKe
     spectralDistance,
     tempoDistance,
     peaksDistance,
+    slowPatternProfile,
     modeKey,
   );
   const evidenceScore = estimateMatchEvidence(
@@ -2857,7 +2865,15 @@ function scoreReferenceVariant(inputFeatures, reference, variant, preset, modeKe
     ? evidenceScore * (1 - diagnostics.microphonePenalty * 0.45)
     : evidenceScore;
   const fieldPatternLift = modeKey === "field"
-    ? clamp(0.84 + diagnostics.patternScore * 0.14 + diagnostics.timbreScore * 0.08, 0.75, 1.08)
+    ? clamp(
+      0.82 +
+      diagnostics.patternScore * 0.13 +
+      diagnostics.timbreScore * 0.1 +
+      (diagnostics.slowPatternProfile ? 0.02 : 0) +
+      (diagnostics.fieldLeadershipBonus || 0) * 0.45,
+      0.74,
+      1.1,
+    )
     : 1;
   const signalAdjustedSimilarity =
     absoluteSimilarity *
@@ -2867,12 +2883,15 @@ function scoreReferenceVariant(inputFeatures, reference, variant, preset, modeKe
     fieldPatternLift;
   const fieldRankingScore = modeKey === "field"
     ? clamp(
-      signalAdjustedSimilarity * 0.44 +
-      diagnostics.patternScore * 0.22 +
-      diagnostics.timbreScore * 0.18 +
-      diagnostics.rhythmSimilarity * 0.06 +
+      signalAdjustedSimilarity * 0.38 +
+      diagnostics.patternScore * 0.24 +
+      diagnostics.timbreScore * 0.21 +
+      diagnostics.rhythmSimilarity * 0.05 +
       diagnostics.envelopeSimilarity * 0.05 +
-      diagnostics.spectralSimilarity * 0.05,
+      diagnostics.spectralSimilarity * 0.05 +
+      diagnostics.spectralFluxSimilarity * 0.02 +
+      (diagnostics.slowPatternProfile ? 0.02 : 0) +
+      (diagnostics.fieldLeadershipBonus || 0),
       0,
       1,
     )
@@ -2914,6 +2933,7 @@ function buildMatchDiagnostics(
   spectralDistance,
   tempoDistance,
   peaksDistance,
+  slowPatternProfile,
   modeKey,
 ) {
   const intervalSimilarity = clamp(1 - intervalDistance, 0, 1);
@@ -2923,23 +2943,31 @@ function buildMatchDiagnostics(
   const tempoSimilarity = clamp(1 - tempoDistance, 0, 1);
   const peaksSimilarity = clamp(1 - peaksDistance, 0, 1);
   const fingerprintStrength = clamp(fingerprintMatch.similarity / 0.35, 0, 1);
-  const timbreScore = clamp(spectralSimilarity * 0.6 + spectralFluxSimilarity * 0.4, 0, 1);
+  const timbreScore = clamp(spectralSimilarity * 0.68 + spectralFluxSimilarity * 0.32, 0, 1);
   const patternScore = clamp(
-    rhythmMatch.similarity * 0.3 +
-    envelopeMatch.similarity * 0.24 +
-    intervalSimilarity * 0.18 +
-    timbreScore * 0.18 +
-    tempoSimilarity * 0.07 +
-    peaksSimilarity * 0.05,
+    slowPatternProfile
+      ? rhythmMatch.similarity * 0.23 +
+        envelopeMatch.similarity * 0.27 +
+        intervalSimilarity * 0.22 +
+        timbreScore * 0.2 +
+        tempoSimilarity * 0.05 +
+        peaksSimilarity * 0.03
+      : rhythmMatch.similarity * 0.29 +
+        envelopeMatch.similarity * 0.23 +
+        intervalSimilarity * 0.17 +
+        timbreScore * 0.22 +
+        tempoSimilarity * 0.05 +
+        peaksSimilarity * 0.04,
     0,
     1,
   );
+  const patternDominance = clamp((patternScore - fingerprintStrength + 0.2) / 0.38, 0, 1);
   const microphonePenalty = modeKey === "field"
     ? clamp(
-      Math.max(0, 0.72 - patternScore) * 0.45 +
-      Math.max(0, fingerprintStrength - patternScore) * 0.18,
+      Math.max(0, (slowPatternProfile ? 0.76 : 0.72) - patternScore) * 0.42 +
+      Math.max(0, fingerprintStrength - patternScore - (slowPatternProfile ? 0.1 : 0.04)) * 0.26,
       0,
-      0.28,
+      slowPatternProfile ? 0.24 : 0.3,
     )
     : 0;
 
@@ -2956,7 +2984,10 @@ function buildMatchDiagnostics(
     tempoSimilarity,
     peaksSimilarity,
     patternScore,
+    patternDominance,
     microphonePenalty,
+    slowPatternProfile,
+    fieldLeadershipBonus: 0,
   };
 }
 
@@ -2969,8 +3000,15 @@ function estimateMatchEvidence(
   diagnostics,
   modeKey,
 ) {
+  const slowPatternProfile = diagnostics.slowPatternProfile;
+  const dominantPattern = diagnostics.patternDominance >= 0.58 || diagnostics.patternScore >= (slowPatternProfile ? 0.8 : 0.84);
+  const voteInfluence = dominantPattern ? 1 : 0.28;
+  const fingerprintInfluence = dominantPattern ? 1 : 0.45;
   const voteScore = clamp(
-    fingerprintMatch.votes / Math.max(detectionLimit("minFingerprintVotes", modeKey), inputFeatures.fingerprintsCount * 0.28),
+    fingerprintMatch.votes / Math.max(
+      slowPatternProfile ? 2 : detectionLimit("minFingerprintVotes", modeKey),
+      inputFeatures.fingerprintsCount * (slowPatternProfile ? 0.22 : 0.28),
+    ),
     0,
     1,
   );
@@ -2981,17 +3019,18 @@ function estimateMatchEvidence(
 
   if (modeKey === "field") {
     return clamp(
-      diagnostics.patternScore * 0.26 +
-      diagnostics.timbreScore * 0.18 +
-      rhythmScore * 0.12 +
-      envelopeScore * 0.11 +
-      diagnostics.intervalSimilarity * 0.1 +
+      diagnostics.patternScore * (slowPatternProfile ? 0.28 : 0.27) +
+      diagnostics.timbreScore * (slowPatternProfile ? 0.22 : 0.2) +
+      rhythmScore * (slowPatternProfile ? 0.09 : 0.11) +
+      envelopeScore * (slowPatternProfile ? 0.13 : 0.12) +
+      diagnostics.intervalSimilarity * (slowPatternProfile ? 0.12 : 0.1) +
       diagnostics.spectralSimilarity * 0.08 +
-      diagnostics.spectralFluxSimilarity * 0.07 +
+      diagnostics.spectralFluxSimilarity * 0.06 +
       absoluteScore * 0.05 +
       inputFeatures.rhythmicStability * 0.05 +
-      fingerprintScore * 0.04 +
-      voteScore * 0.02,
+      fingerprintScore * 0.03 * fingerprintInfluence +
+      voteScore * 0.01 * voteInfluence +
+      (diagnostics.fieldLeadershipBonus || 0) * 0.2,
       0,
       1,
     );
@@ -3012,21 +3051,22 @@ function isReliableMatch(match, settings) {
   const modeKey = settings.analysisMode;
   const diagnostics = match.diagnostics || {};
   const minimumConfidence = Math.max(detectionLimit("minMatchConfidence", modeKey), settings.minimumConfidence);
+  const minimumVotes = modeKey === "field" && diagnostics.slowPatternProfile ? 1 : detectionLimit("minFingerprintVotes", modeKey);
   const hasFingerprintSupport =
-    match.alignment.fingerprintVotes >= detectionLimit("minFingerprintVotes", modeKey) &&
+    match.alignment.fingerprintVotes >= minimumVotes &&
     (
       match.alignment.fingerprintSimilarity >= detectionLimit("minFingerprintSimilarity", modeKey) ||
       match.alignment.similarity >= detectionLimit("minRhythmSimilarity", modeKey)
     );
   const hasStrongFieldPattern = modeKey === "field" &&
-    match.alignment.fingerprintVotes >= 2 &&
-    diagnostics.patternScore >= 0.84 &&
-    diagnostics.rhythmSimilarity >= 0.78 &&
-    diagnostics.envelopeSimilarity >= 0.78 &&
-    diagnostics.intervalSimilarity >= 0.62 &&
-    diagnostics.timbreScore >= 0.74;
+    match.alignment.fingerprintVotes >= (diagnostics.slowPatternProfile ? 1 : 2) &&
+    diagnostics.patternScore >= (diagnostics.slowPatternProfile ? 0.82 : 0.84) &&
+    diagnostics.rhythmSimilarity >= (diagnostics.slowPatternProfile ? 0.72 : 0.78) &&
+    diagnostics.envelopeSimilarity >= (diagnostics.slowPatternProfile ? 0.82 : 0.78) &&
+    diagnostics.intervalSimilarity >= (diagnostics.slowPatternProfile ? 0.7 : 0.62) &&
+    diagnostics.timbreScore >= (diagnostics.slowPatternProfile ? 0.72 : 0.76);
   const confirmationConfidence = modeKey === "field" && !hasStrongFieldPattern
-    ? Math.max(minimumConfidence, 55)
+    ? Math.max(minimumConfidence, diagnostics.slowPatternProfile ? 52 : 55)
     : minimumConfidence;
 
   return (
@@ -3053,13 +3093,14 @@ function getMatchAmbiguity(matches, modeKey = state.settings.analysisMode) {
     const margin = best.confidence - candidate.confidence;
     const diagnostics = candidate.diagnostics || {};
     const hasPlausibleVotes =
-      candidate.alignment.fingerprintVotes >= Math.max(2, detectionLimit("minFingerprintVotes", modeKey) - 2);
+      candidate.alignment.fingerprintVotes >= Math.max(diagnostics.slowPatternProfile ? 1 : 2, detectionLimit("minFingerprintVotes", modeKey) - 2);
     const hasPlausibleFieldPattern = modeKey === "field" &&
-      candidate.alignment.fingerprintVotes >= 2 &&
-      diagnostics.patternScore >= 0.8 &&
-      diagnostics.rhythmSimilarity >= 0.74 &&
-      diagnostics.envelopeSimilarity >= 0.72 &&
-      diagnostics.timbreScore >= 0.7;
+      candidate.alignment.fingerprintVotes >= (diagnostics.slowPatternProfile ? 1 : 2) &&
+      diagnostics.patternScore >= (diagnostics.slowPatternProfile ? 0.78 : 0.8) &&
+      diagnostics.rhythmSimilarity >= (diagnostics.slowPatternProfile ? 0.68 : 0.74) &&
+      diagnostics.envelopeSimilarity >= (diagnostics.slowPatternProfile ? 0.78 : 0.72) &&
+      diagnostics.intervalSimilarity >= (diagnostics.slowPatternProfile ? 0.66 : 0.58) &&
+      diagnostics.timbreScore >= (diagnostics.slowPatternProfile ? 0.68 : 0.7);
     const candidateIsPlausible =
       candidate.confidence >= minimumPlausibleConfidence &&
       candidate.evidenceScore >= detectionLimit("minMatchEvidence", modeKey) &&
@@ -3067,6 +3108,37 @@ function getMatchAmbiguity(matches, modeKey = state.settings.analysisMode) {
 
     return margin <= minimumMargin && candidateIsPlausible;
   }) || null;
+}
+
+function applyFieldLeadershipBonuses(scored) {
+  if (scored.length < 2) {
+    return;
+  }
+
+  const maxPattern = Math.max(...scored.map((item) => item.diagnostics?.patternScore || 0));
+  const maxEnvelope = Math.max(...scored.map((item) => item.diagnostics?.envelopeSimilarity || 0));
+  const maxSpectral = Math.max(...scored.map((item) => item.diagnostics?.spectralSimilarity || 0));
+
+  scored.forEach((item) => {
+    const diagnostics = item.diagnostics || {};
+    const leadsPattern = diagnostics.patternScore >= Math.max(0.8, maxPattern - 0.015);
+    const leadsEnvelope = diagnostics.envelopeSimilarity >= Math.max(0.76, maxEnvelope - 0.02);
+    const leadsSpectral = diagnostics.spectralSimilarity >= Math.max(0.74, maxSpectral - 0.02);
+    const tripleLead = leadsPattern && leadsEnvelope && leadsSpectral;
+    const dualLead = leadsPattern && (leadsEnvelope || leadsSpectral);
+    const bonus = tripleLead ? 0.05 : dualLead ? 0.022 : 0;
+    diagnostics.fieldLeadershipBonus = bonus;
+    item.fieldRankingScore = clamp(item.fieldRankingScore + bonus, 0, 1);
+  });
+}
+
+function isSlowPatternProfile(inputFeatures, referenceFeatures) {
+  const inputTempo = Number(inputFeatures?.tempoEstimate || 0);
+  const referenceTempo = Number(referenceFeatures?.tempoEstimate || 0);
+  const peakRate = Number(inputFeatures?.peakRate || 0);
+  const slowTempo = (inputTempo > 0 && inputTempo <= 58) || (referenceTempo > 0 && referenceTempo <= 58);
+  const nearSlowTempo = (inputTempo > 0 && inputTempo <= 66) || (referenceTempo > 0 && referenceTempo <= 66);
+  return slowTempo || (nearSlowTempo && peakRate <= 1.2);
 }
 
 function clamp(value, min, max) {

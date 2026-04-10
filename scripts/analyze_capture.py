@@ -119,6 +119,9 @@ def print_capture_result(capture_path: Path, references: list[dict], limits: dic
             f"- intervalos {diagnostics.get('intervalSimilarity', 0):.3f} "
             f"- espectro {diagnostics.get('spectralSimilarity', 0):.3f} "
             f"- flujo {diagnostics.get('spectralFluxSimilarity', 0):.3f} "
+            f"- dominio {diagnostics.get('patternDominance', 0):.3f} "
+            f"- bonus {diagnostics.get('fieldLeadershipBonus', 0):.3f} "
+            f"- perfil {'lento' if diagnostics.get('slowPatternProfile') else 'normal'} "
             f"- penalizacion micro {diagnostics.get('microphonePenalty', 0):.3f} "
             f"- {variant_label}"
         )
@@ -334,16 +337,17 @@ def score_candidate(
         diagnostics = best.get("diagnostics", {})
         if mode_key == "field":
             match_score = (
-                best["confidence"] * 0.38
+                best["confidence"] * 0.34
                 + best["evidenceScore"] * 30
-                + best["absoluteSimilarity"] * 14
-                + diagnostics.get("patternScore", 0) * 18
-                + diagnostics.get("timbreScore", 0) * 16
+                + best["absoluteSimilarity"] * 13
+                + diagnostics.get("patternScore", 0) * 21
+                + diagnostics.get("timbreScore", 0) * 19
                 + diagnostics.get("rhythmSimilarity", 0) * 8
-                + diagnostics.get("envelopeSimilarity", 0) * 6
-                + diagnostics.get("spectralSimilarity", 0) * 6
-                + diagnostics.get("spectralFluxSimilarity", 0) * 6
-                + min(3, votes * 0.16)
+                + diagnostics.get("envelopeSimilarity", 0) * 8
+                + diagnostics.get("spectralSimilarity", 0) * 8
+                + diagnostics.get("spectralFluxSimilarity", 0) * 7
+                + diagnostics.get("fieldLeadershipBonus", 0) * 18
+                + min(2.2, votes * 0.11)
             )
         else:
             match_score = (

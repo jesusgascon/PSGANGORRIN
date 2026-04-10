@@ -40,6 +40,11 @@ El modo `Micro real` baja el umbral visible para permitir capturas de altavoz, p
 
 En `Micro real`, los fingerprints exactos pesan menos que en una comparacion limpia. El audio que sale por un altavoz y vuelve por un microfono puede cambiar transitorios, tempo aparente y frecuencias. Por eso este modo da mas importancia al patron de onsets, envolvente e intervalos, y penaliza candidatos que ganan solo por fingerprints cuando el patron general no acompaña.
 
+Este perfil ahora aplica tambien dos reglas adicionales:
+
+- una bonificacion si el mismo candidato lidera a la vez en patron, envolvente y espectro
+- un perfil lento para toques de tempo bajo, donde el patron general, la envolvente, el timbre y los intervalos pesan mas que el voto bruto de fingerprint
+
 ## Tramos Activos De La Captura
 
 La escucha real no siempre empieza justo cuando empieza el toque. Puede haber silencio inicial, eco final, ruido de sala o un golpe aislado antes del patron principal.
@@ -124,6 +129,8 @@ Esto ayuda con capturas reales de microfono, porque el usuario normalmente graba
 La confianza se penaliza por calidad de senal y evidencia. Ya no se infla solo porque una referencia sea "la menos mala".
 
 En capturas de microfono, la confianza tambien se penaliza si el candidato tiene votos de fingerprint pero bajo patron global. Esto evita que un toque gane por coincidencias locales fragiles cuando el ritmo completo no encaja.
+
+Ademas, en `Micro real` ya no se elige la mejor variante de una referencia solo por distancia cruda. La variante completa o por segmento se ordena por una puntuacion final de campo, con mas peso en patron general, timbre y coherencia del tramo.
 
 ## Fase 4: Aceptacion
 
