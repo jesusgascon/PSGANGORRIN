@@ -2440,15 +2440,20 @@ function refreshDistinctiveReferenceSegments() {
       .filter((segment) => segment?.features)
       .map((segment) => {
         const distinctiveness = estimateSegmentDistinctiveness(segment.features, reference.id, readyReferences);
+        const fieldDistinctiveness = estimateFieldSegmentDistinctiveness(segment.features, reference.id, readyReferences);
         const baseScore = Number(segment.baseScore ?? segment.score ?? 0);
         return {
           ...segment,
           baseScore,
           distinctiveness,
-          score: baseScore + distinctiveness * 24,
+          fieldDistinctiveness,
+          score: baseScore + distinctiveness * 16 + fieldDistinctiveness * 18,
         };
       })
-      .sort((left, right) => right.score - left.score || right.distinctiveness - left.distinctiveness);
+      .sort((left, right) =>
+        right.score - left.score ||
+        right.fieldDistinctiveness - left.fieldDistinctiveness ||
+        right.distinctiveness - left.distinctiveness);
 
     const selected = [];
     rescored.forEach((segment) => {
@@ -2470,6 +2475,24 @@ function estimateSegmentDistinctiveness(segmentFeatures, ownerId, references) {
 
     iterateReferenceVariantFeatures(reference).forEach((variantFeatures) => {
       const similarity = measureReferenceFeatureSimilarity(segmentFeatures, variantFeatures);
+      if (similarity > maxSimilarity) {
+        maxSimilarity = similarity;
+      }
+    });
+  });
+
+  return clamp(1 - maxSimilarity, 0, 1);
+}
+
+function estimateFieldSegmentDistinctiveness(segmentFeatures, ownerId, references) {
+  let maxSimilarity = 0;
+  references.forEach((reference) => {
+    if (reference.id === ownerId) {
+      return;
+    }
+
+    iterateReferenceVariantFeatures(reference).forEach((variantFeatures) => {
+      const similarity = measureFieldReferenceSimilarity(segmentFeatures, variantFeatures);
       if (similarity > maxSimilarity) {
         maxSimilarity = similarity;
       }
@@ -2522,6 +2545,36 @@ function measureReferenceFeatureSimilarity(left, right) {
     fluxSimilarity * 0.14 +
     fingerprintSimilarity * 0.08 +
     tempoSimilarity * 0.04 +
+    densitySimilarity * 0.02,
+    0,
+    1,
+  );
+}
+
+function measureFieldReferenceSimilarity(left, right) {
+  const onsetSimilarity = clamp(1 - vectorDistance(left?.onset || [], right?.onset || []), 0, 1);
+  const envelopeSimilarity = clamp(1 - vectorDistance(left?.envelope || [], right?.envelope || []), 0, 1);
+  const intervalSimilarity = clamp(1 - vectorDistance(left?.intervals || [], right?.intervals || []), 0, 1);
+  const spectralSimilarity = clamp(
+    1 - vectorDistance(left?.spectralProfile || [], right?.spectralProfile || []),
+    0,
+    1,
+  );
+  const fluxSimilarity = clamp(1 - vectorDistance(left?.spectralFlux || [], right?.spectralFlux || []), 0, 1);
+  const tempoSimilarity = clamp(
+    1 - Math.abs((left?.tempoEstimate || 0) - (right?.tempoEstimate || 0)) / 180,
+    0,
+    1,
+  );
+  const densitySimilarity = clamp(1 - Math.abs((left?.density || 0) - (right?.density || 0)), 0, 1);
+
+  return clamp(
+    onsetSimilarity * 0.22 +
+    envelopeSimilarity * 0.23 +
+    intervalSimilarity * 0.18 +
+    spectralSimilarity * 0.18 +
+    fluxSimilarity * 0.12 +
+    tempoSimilarity * 0.05 +
     densitySimilarity * 0.02,
     0,
     1,
@@ -2891,6 +2944,7 @@ function scoreReferenceVariant(inputFeatures, reference, variant, preset, modeKe
       diagnostics.envelopeSimilarity * 0.05 +
       diagnostics.spectralSimilarity * 0.05 +
       diagnostics.spectralFluxSimilarity * 0.02 +
+      diagnostics.segmentConsistency * 0.07 +
       (diagnostics.slowPatternProfile ? 0.02 : 0) +
       (diagnostics.fieldLeadershipBonus || 0),
       0,
@@ -2963,6 +3017,15 @@ function buildMatchDiagnostics(
     1,
   );
   const patternDominance = clamp((patternScore - fingerprintStrength + 0.2) / 0.38, 0, 1);
+  const segmentConsistency = clamp(
+    rhythmMatch.similarity * 0.42 +
+    envelopeMatch.similarity * 0.24 +
+    intervalSimilarity * 0.18 +
+    spectralSimilarity * 0.1 +
+    spectralFluxSimilarity * 0.06,
+    0,
+    1,
+  );
   const microphonePenalty = modeKey === "field"
     ? clamp(
       Math.max(0, (slowPatternProfile ? 0.76 : 0.72) - patternScore) * 0.42 +
@@ -2986,6 +3049,7 @@ function buildMatchDiagnostics(
     peaksSimilarity,
     patternScore,
     patternDominance,
+    segmentConsistency,
     microphonePenalty,
     slowPatternProfile,
     fieldLeadershipBonus: 0,
@@ -3027,6 +3091,7 @@ function estimateMatchEvidence(
       diagnostics.intervalSimilarity * (slowPatternProfile ? 0.12 : 0.1) +
       diagnostics.spectralSimilarity * 0.08 +
       diagnostics.spectralFluxSimilarity * 0.06 +
+      diagnostics.segmentConsistency * 0.08 +
       absoluteScore * 0.05 +
       inputFeatures.rhythmicStability * 0.05 +
       fingerprintScore * 0.03 * fingerprintInfluence +
@@ -3065,7 +3130,8 @@ function isReliableMatch(match, settings) {
     diagnostics.rhythmSimilarity >= (diagnostics.slowPatternProfile ? 0.72 : 0.78) &&
     diagnostics.envelopeSimilarity >= (diagnostics.slowPatternProfile ? 0.82 : 0.78) &&
     diagnostics.intervalSimilarity >= (diagnostics.slowPatternProfile ? 0.7 : 0.62) &&
-    diagnostics.timbreScore >= (diagnostics.slowPatternProfile ? 0.72 : 0.76);
+    diagnostics.timbreScore >= (diagnostics.slowPatternProfile ? 0.72 : 0.76) &&
+    diagnostics.segmentConsistency >= (diagnostics.slowPatternProfile ? 0.78 : 0.8);
   const confirmationConfidence = modeKey === "field" && !hasStrongFieldPattern
     ? Math.max(minimumConfidence, diagnostics.slowPatternProfile ? 52 : 55)
     : minimumConfidence;
@@ -3101,7 +3167,8 @@ function getMatchAmbiguity(matches, modeKey = state.settings.analysisMode) {
       diagnostics.rhythmSimilarity >= (diagnostics.slowPatternProfile ? 0.68 : 0.74) &&
       diagnostics.envelopeSimilarity >= (diagnostics.slowPatternProfile ? 0.78 : 0.72) &&
       diagnostics.intervalSimilarity >= (diagnostics.slowPatternProfile ? 0.66 : 0.58) &&
-      diagnostics.timbreScore >= (diagnostics.slowPatternProfile ? 0.68 : 0.7);
+      diagnostics.timbreScore >= (diagnostics.slowPatternProfile ? 0.68 : 0.7) &&
+      diagnostics.segmentConsistency >= (diagnostics.slowPatternProfile ? 0.74 : 0.76);
     const candidateIsPlausible =
       candidate.confidence >= minimumPlausibleConfidence &&
       candidate.evidenceScore >= detectionLimit("minMatchEvidence", modeKey) &&
@@ -3119,15 +3186,19 @@ function applyFieldLeadershipBonuses(scored) {
   const maxPattern = Math.max(...scored.map((item) => item.diagnostics?.patternScore || 0));
   const maxEnvelope = Math.max(...scored.map((item) => item.diagnostics?.envelopeSimilarity || 0));
   const maxSpectral = Math.max(...scored.map((item) => item.diagnostics?.spectralSimilarity || 0));
+  const maxSegmentConsistency = Math.max(...scored.map((item) => item.diagnostics?.segmentConsistency || 0));
 
   scored.forEach((item) => {
     const diagnostics = item.diagnostics || {};
     const leadsPattern = diagnostics.patternScore >= Math.max(0.8, maxPattern - 0.015);
     const leadsEnvelope = diagnostics.envelopeSimilarity >= Math.max(0.76, maxEnvelope - 0.02);
     const leadsSpectral = diagnostics.spectralSimilarity >= Math.max(0.74, maxSpectral - 0.02);
+    const leadsSegmentConsistency =
+      diagnostics.segmentConsistency >= Math.max(0.76, maxSegmentConsistency - 0.02);
     const tripleLead = leadsPattern && leadsEnvelope && leadsSpectral;
-    const dualLead = leadsPattern && (leadsEnvelope || leadsSpectral);
-    const bonus = tripleLead ? 0.05 : dualLead ? 0.022 : 0;
+    const segmentLead = leadsPattern && leadsSegmentConsistency;
+    const dualLead = leadsPattern && (leadsEnvelope || leadsSpectral || leadsSegmentConsistency);
+    const bonus = tripleLead ? 0.05 : segmentLead ? 0.04 : dualLead ? 0.022 : 0;
     diagnostics.fieldLeadershipBonus = bonus;
     item.fieldRankingScore = clamp(item.fieldRankingScore + bonus, 0, 1);
   });

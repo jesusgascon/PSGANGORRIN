@@ -19,6 +19,7 @@
 - Biblioteca refinada con segmentos distintivos por toque y segunda huella espectral ligera; en `Micro real` se usa mas patron+timbre y menos voto bruto de fingerprint.
 - Ajuste fino de `Micro real`: mas peso de timbre, menos dependencia de votos cuando el patron no domina, bonificacion por liderazgo conjunto de patron+envolvente+espectro y perfil especial para toques lentos como `Dolor`.
 - Confianza visible ajustada en `Micro real`: cuando un candidato ya gana claro por patron+timbre, la UI muestra un porcentaje algo mas representativo sin relajar la logica real de confirmacion ni de ambiguedad.
+- Base para dataset real de campo: carpeta `data/field-dataset/`, script para registrar capturas reales y script para resumir ese dataset contra la biblioteca actual.
 
 ## v1.1.0
 

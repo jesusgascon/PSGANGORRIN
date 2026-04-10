@@ -748,6 +748,7 @@ def score_reference_variant(
             + diagnostics["envelopeSimilarity"] * 0.05
             + diagnostics["spectralSimilarity"] * 0.05
             + diagnostics["spectralFluxSimilarity"] * 0.02
+            + diagnostics["segmentConsistency"] * 0.07
             + (0.02 if diagnostics["slowPatternProfile"] else 0)
             + diagnostics.get("fieldLeadershipBonus", 0),
             0,
@@ -814,6 +815,15 @@ def build_match_diagnostics(
         1,
     )
     pattern_dominance = clamp((pattern_score - fingerprint_strength + 0.2) / 0.38, 0, 1)
+    segment_consistency = clamp(
+        rhythm_match["similarity"] * 0.42
+        + envelope_match["similarity"] * 0.24
+        + interval_similarity * 0.18
+        + spectral_similarity * 0.10
+        + flux_similarity * 0.06,
+        0,
+        1,
+    )
     microphone_penalty = (
         clamp(
             max(0, (0.76 if slow_pattern_profile else 0.72) - pattern_score) * 0.42
@@ -838,6 +848,7 @@ def build_match_diagnostics(
         "peaksSimilarity": peaks_similarity,
         "patternScore": pattern_score,
         "patternDominance": pattern_dominance,
+        "segmentConsistency": segment_consistency,
         "microphonePenalty": microphone_penalty,
         "slowPatternProfile": slow_pattern_profile,
         "fieldLeadershipBonus": 0,
@@ -883,6 +894,7 @@ def estimate_match_evidence(
             + diagnostics["intervalSimilarity"] * (0.12 if slow_pattern_profile else 0.10)
             + diagnostics["spectralSimilarity"] * 0.08
             + diagnostics["spectralFluxSimilarity"] * 0.06
+            + diagnostics["segmentConsistency"] * 0.08
             + absolute_score * 0.05
             + input_features["rhythmicStability"] * 0.05
             + fingerprint_score * 0.03 * fingerprint_influence
@@ -924,6 +936,7 @@ def is_reliable_match(match: dict, limits: dict, minimum_confidence: float, mode
         and diagnostics.get("envelopeSimilarity", 0) >= (0.82 if diagnostics.get("slowPatternProfile", False) else 0.78)
         and diagnostics.get("intervalSimilarity", 0) >= (0.70 if diagnostics.get("slowPatternProfile", False) else 0.62)
         and diagnostics.get("timbreScore", 0) >= (0.72 if diagnostics.get("slowPatternProfile", False) else 0.76)
+        and diagnostics.get("segmentConsistency", 0) >= (0.78 if diagnostics.get("slowPatternProfile", False) else 0.80)
     )
     confirmation_confidence = (
         max(minimum_confirmation, 52 if diagnostics.get("slowPatternProfile", False) else 55)
@@ -967,6 +980,7 @@ def get_match_ambiguity(
             and diagnostics.get("envelopeSimilarity", 0) >= (0.78 if diagnostics.get("slowPatternProfile", False) else 0.72)
             and diagnostics.get("intervalSimilarity", 0) >= (0.66 if diagnostics.get("slowPatternProfile", False) else 0.58)
             and diagnostics.get("timbreScore", 0) >= (0.68 if diagnostics.get("slowPatternProfile", False) else 0.7)
+            and diagnostics.get("segmentConsistency", 0) >= (0.74 if diagnostics.get("slowPatternProfile", False) else 0.76)
         )
         candidate_is_plausible = (
             candidate["confidence"] >= minimum_plausible_confidence
@@ -985,15 +999,18 @@ def apply_field_leadership_bonuses(scored: list[dict]) -> None:
     max_pattern = max(item.get("diagnostics", {}).get("patternScore", 0) for item in scored)
     max_envelope = max(item.get("diagnostics", {}).get("envelopeSimilarity", 0) for item in scored)
     max_spectral = max(item.get("diagnostics", {}).get("spectralSimilarity", 0) for item in scored)
+    max_segment_consistency = max(item.get("diagnostics", {}).get("segmentConsistency", 0) for item in scored)
 
     for item in scored:
         diagnostics = item.setdefault("diagnostics", {})
         leads_pattern = diagnostics.get("patternScore", 0) >= max(0.80, max_pattern - 0.015)
         leads_envelope = diagnostics.get("envelopeSimilarity", 0) >= max(0.76, max_envelope - 0.02)
         leads_spectral = diagnostics.get("spectralSimilarity", 0) >= max(0.74, max_spectral - 0.02)
+        leads_segment_consistency = diagnostics.get("segmentConsistency", 0) >= max(0.76, max_segment_consistency - 0.02)
         triple_lead = leads_pattern and leads_envelope and leads_spectral
-        dual_lead = leads_pattern and (leads_envelope or leads_spectral)
-        bonus = 0.05 if triple_lead else 0.022 if dual_lead else 0
+        segment_lead = leads_pattern and leads_segment_consistency
+        dual_lead = leads_pattern and (leads_envelope or leads_spectral or leads_segment_consistency)
+        bonus = 0.05 if triple_lead else 0.04 if segment_lead else 0.022 if dual_lead else 0
         diagnostics["fieldLeadershipBonus"] = bonus
         item["fieldRankingScore"] = clamp(item.get("fieldRankingScore", 0) + bonus, 0, 1)
 

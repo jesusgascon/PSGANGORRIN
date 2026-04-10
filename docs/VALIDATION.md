@@ -64,6 +64,22 @@ Analizar grabaciones reales ya capturadas desde microfono o monitor:
 python3 scripts/analyze_capture.py /tmp/cofrabeat-mic-tests/*.wav --mode field
 ```
 
+Registrar una de esas capturas dentro del dataset real del proyecto:
+
+```bash
+python3 scripts/register_field_capture.py /tmp/cofrabeat-mic-tests/03-formacion.wav \
+  --expected-file "Prendimiento - Formación.mp3" \
+  --source mic \
+  --device "webcam-c920" \
+  --notes "salon, altavoz frontal, volumen 85"
+```
+
+Y resumir luego todo el dataset real:
+
+```bash
+python3 scripts/report_field_dataset.py --mode field
+```
+
 Este comando usa la misma logica de tramos activos que la app web y muestra si la captura es usable, el ranking y si el resultado queda confirmado o ambiguo.
 
 El analisis de capturas reales tambien aplica la misma limpieza suave que la app: centra la senal y atenúa ruido bajo entre golpes, sin amplificar artificialmente capturas debiles.

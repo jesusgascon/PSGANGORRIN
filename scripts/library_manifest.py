@@ -675,18 +675,28 @@ def enrich_reference_segments(references: list[dict]) -> list[dict]:
                 reference.get("file"),
                 ready_references,
             )
+            field_distinctiveness = estimate_field_segment_distinctiveness(
+                segment_features,
+                reference.get("file"),
+                ready_references,
+            )
             base_score = float(segment.get("baseScore", segment.get("score", 0.0)) or 0.0)
             rescored.append(
                 {
                     **segment,
                     "baseScore": round(base_score, 6),
                     "distinctiveness": round(distinctiveness, 6),
-                    "score": round(base_score + distinctiveness * 24, 6),
+                    "fieldDistinctiveness": round(field_distinctiveness, 6),
+                    "score": round(base_score + distinctiveness * 16 + field_distinctiveness * 18, 6),
                 }
             )
 
         rescored.sort(
-            key=lambda item: (item.get("score", 0.0), item.get("distinctiveness", 0.0)),
+            key=lambda item: (
+                item.get("score", 0.0),
+                item.get("fieldDistinctiveness", 0.0),
+                item.get("distinctiveness", 0.0),
+            ),
             reverse=True,
         )
         selected = []
@@ -707,6 +717,18 @@ def estimate_segment_distinctiveness(segment_features: dict, owner_file: str | N
             continue
         for variant_features in iter_reference_variant_features(reference):
             similarity = measure_reference_similarity(segment_features, variant_features)
+            if similarity > max_similarity:
+                max_similarity = similarity
+    return clamp(1 - max_similarity, 0.0, 1.0)
+
+
+def estimate_field_segment_distinctiveness(segment_features: dict, owner_file: str | None, references: list[dict]) -> float:
+    max_similarity = 0.0
+    for reference in references:
+        if reference.get("file") == owner_file:
+            continue
+        for variant_features in iter_reference_variant_features(reference):
+            similarity = measure_field_reference_similarity(segment_features, variant_features)
             if similarity > max_similarity:
                 max_similarity = similarity
     return clamp(1 - max_similarity, 0.0, 1.0)
@@ -762,6 +784,44 @@ def measure_reference_similarity(left: dict, right: dict) -> float:
         + flux_similarity * 0.14
         + fingerprint_similarity * 0.08
         + tempo_similarity * 0.04
+        + density_similarity * 0.02,
+        0.0,
+        1.0,
+    )
+
+
+def measure_field_reference_similarity(left: dict, right: dict) -> float:
+    onset_similarity = clamp(1 - vector_distance(left.get("onset", []), right.get("onset", [])), 0.0, 1.0)
+    envelope_similarity = clamp(1 - vector_distance(left.get("envelope", []), right.get("envelope", [])), 0.0, 1.0)
+    interval_similarity = clamp(1 - vector_distance(left.get("intervals", []), right.get("intervals", [])), 0.0, 1.0)
+    spectral_similarity = clamp(
+        1 - vector_distance(left.get("spectralProfile", []), right.get("spectralProfile", [])),
+        0.0,
+        1.0,
+    )
+    flux_similarity = clamp(
+        1 - vector_distance(left.get("spectralFlux", []), right.get("spectralFlux", [])),
+        0.0,
+        1.0,
+    )
+    tempo_similarity = clamp(
+        1 - abs(float(left.get("tempoEstimate", 0.0)) - float(right.get("tempoEstimate", 0.0))) / 180,
+        0.0,
+        1.0,
+    )
+    density_similarity = clamp(
+        1 - abs(float(left.get("density", 0.0)) - float(right.get("density", 0.0))),
+        0.0,
+        1.0,
+    )
+
+    return clamp(
+        onset_similarity * 0.22
+        + envelope_similarity * 0.23
+        + interval_similarity * 0.18
+        + spectral_similarity * 0.18
+        + flux_similarity * 0.12
+        + tempo_similarity * 0.05
         + density_similarity * 0.02,
         0.0,
         1.0,

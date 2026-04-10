@@ -440,13 +440,57 @@ Limitaciones actuales:
 
 ## Siguientes Mejoras Posibles
 
-- Crear dataset propio con grabaciones reales desde movil.
+Orden recomendado por menor riesgo y mas utilidad practica:
+
+1. Crear dataset propio con grabaciones reales desde movil y webcam.
+2. Añadir un script unico de validacion de campo para grabar, analizar y resumir pruebas reales.
+3. Afinar toques conflictivos o muy parecidos entre si usando ese dataset real.
+4. Mejorar los mensajes UX de resultado ambiguo o no concluyente.
+
+Otras mejoras futuras:
+
 - Medir falsos positivos y falsos negativos con pruebas reales.
 - Mejorar comparacion con MFCC, DTW o embeddings.
 - Entrenar un modelo ligero con TensorFlow.js.
 - Crear backend real con usuarios y administracion segura.
 - Exportar e importar bibliotecas completas.
 - Preparar instalacion PWA mas completa.
+
+## Dataset Real De Capturas
+
+El dataset real de campo debe generarse en tu equipo de casa, no en remoto. Tiene valor porque recoge:
+
+- tu movil o webcam
+- tu altavoz real
+- tu sala real
+- tu volumen real
+- tu distancia real
+
+Estructura:
+
+```text
+data/field-dataset/
+data/field-dataset/captures/
+data/field-dataset/manifest.json
+```
+
+Registrar una captura real ya grabada:
+
+```bash
+python3 scripts/register_field_capture.py /tmp/cofrabeat-mic-tests/02-dolor.wav \
+  --expected-file "Prendimiento - Dolor de la Madre de Dios.mp3" \
+  --source mic \
+  --device "webcam-c920" \
+  --notes "altavoz salon, 60 cm, volumen 85"
+```
+
+Analizar en bloque todo el dataset real:
+
+```bash
+python3 scripts/report_field_dataset.py --mode field
+```
+
+Este flujo sirve para guardar capturas buenas, ambiguas o fallidas y luego afinar el detector con datos reales de casa, no solo con simulacion.
 
 ## Licencia Y Uso
 
