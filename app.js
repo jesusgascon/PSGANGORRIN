@@ -211,6 +211,11 @@ const elements = {
   startupMeta: document.querySelector("#startupMeta"),
   startupProgressBar: document.querySelector("#startupProgressBar"),
   startupProgressLabel: document.querySelector("#startupProgressLabel"),
+  analysisOverlay: document.querySelector("#analysisOverlay"),
+  analysisCard: document.querySelector("#analysisCard"),
+  analysisTitle: document.querySelector("#analysisTitle"),
+  analysisMeta: document.querySelector("#analysisMeta"),
+  analysisProgressLabel: document.querySelector("#analysisProgressLabel"),
 };
 
 boot();
@@ -1332,6 +1337,8 @@ async function startListening() {
 
   state.isListening = true;
   state.captureStartedAt = Date.now();
+  setCaptureInteractionState(true, { allowListenButton: true });
+  setAnalysisState(false);
   elements.listenButton.classList.add("is-listening");
   elements.listenButton.setAttribute("aria-label", "Parar escucha");
   elements.listenLabel.textContent = "Parar";
@@ -1405,6 +1412,7 @@ async function stopListening({ manual = false } = {}) {
   state.listenTicker = null;
   state.isListening = false;
   const capturedSeconds = getCapturedSeconds();
+  setCaptureInteractionState(true);
 
   elements.listenButton.classList.remove("is-listening");
   elements.listenButton.setAttribute("aria-label", "Escuchar");
@@ -1414,6 +1422,11 @@ async function stopListening({ manual = false } = {}) {
     elements.listenTimer.hidden = false;
     elements.listenTimer.textContent = `${capturedSeconds.toFixed(1)} s captados`;
   }
+  setAnalysisState(true, {
+    title: manual ? "Procesando escucha detenida" : "Analizando el toque",
+    meta: "Midiendo patrón, timbre, landmarks y coincidencias de la biblioteca.",
+    label: `Audio captado: ${capturedSeconds.toFixed(1)} s · preparando resultado final.`,
+  });
   updateStatus("ready", manual ? "Parado, procesando" : "Procesando");
   updateResult({
     name: manual ? "Escucha detenida" : "Escucha completada",
@@ -1429,6 +1442,25 @@ async function stopListening({ manual = false } = {}) {
   cleanupListeningNodes();
 
   try {
+    await delay(90);
+    setAnalysisState(true, {
+      title: "Analizando el toque",
+      meta: "Midiendo patrón rítmico y limpiando la captura para la comparación.",
+      label: `Audio captado: ${capturedSeconds.toFixed(1)} s · filtrando y extrayendo rasgos.`,
+    });
+    await delay(220);
+    setAnalysisState(true, {
+      title: "Cruzando la biblioteca",
+      meta: "Comparando landmarks, ventanas fuertes y coincidencias temporales.",
+      label: `Audio captado: ${capturedSeconds.toFixed(1)} s · buscando el mejor encaje entre referencias.`,
+    });
+    await delay(220);
+    setAnalysisState(true, {
+      title: "Preparando resultado final",
+      meta: "Ordenando candidatos y calculando el nivel de confirmación.",
+      label: `Audio captado: ${capturedSeconds.toFixed(1)} s · cerrando diagnóstico visual.`,
+    });
+    await delay(180);
     processCapturedSignal(inputSignal, capturedSeconds);
   } catch (error) {
     console.error("No se pudo procesar la captura", error);
@@ -1575,6 +1607,8 @@ function resetIdleUi() {
   state.captureStartedAt = null;
   window.clearInterval(state.listenTicker);
   state.listenTicker = null;
+  setAnalysisState(false);
+  setCaptureInteractionState(false);
   elements.listenButton.setAttribute("aria-label", "Escuchar");
   elements.listenLabel.textContent = "Escuchar";
   elements.listenHint.textContent = `${state.settings.captureSeconds} segundos`;
@@ -4269,6 +4303,89 @@ function getFilteredReferences() {
 function updateStatus(kind, text) {
   elements.statusPill.className = `status-pill ${kind}`;
   elements.statusPill.textContent = text;
+}
+
+function setAnalysisState(isActive, options = {}) {
+  if (!elements.analysisOverlay) {
+    return;
+  }
+
+  document.body.classList.toggle("app-processing", isActive);
+  elements.analysisOverlay.hidden = !isActive;
+  [document.querySelector(".app-shell"), elements.localModeBanner].forEach((container) => {
+    if (!container) {
+      return;
+    }
+    if (isActive) {
+      container.setAttribute("inert", "");
+      container.setAttribute("aria-hidden", "true");
+    } else {
+      container.removeAttribute("inert");
+      container.removeAttribute("aria-hidden");
+    }
+  });
+
+  if (isActive) {
+    if (options.title && elements.analysisTitle) {
+      elements.analysisTitle.textContent = options.title;
+    }
+    if (options.meta && elements.analysisMeta) {
+      elements.analysisMeta.textContent = options.meta;
+    }
+    if (options.label && elements.analysisProgressLabel) {
+      elements.analysisProgressLabel.textContent = options.label;
+    }
+    elements.analysisCard?.focus({ preventScroll: true });
+    return;
+  }
+
+  if (elements.analysisTitle) {
+    elements.analysisTitle.textContent = "Comparando el toque";
+  }
+  if (elements.analysisMeta) {
+    elements.analysisMeta.textContent = "Midiendo patrón, timbre, landmarks y coincidencias con la biblioteca.";
+  }
+  if (elements.analysisProgressLabel) {
+    elements.analysisProgressLabel.textContent = "Esto puede tardar unos segundos según la duración de la escucha.";
+  }
+}
+
+function setCaptureInteractionState(isLocked, { allowListenButton = false } = {}) {
+  const controls = [
+    elements.modeToggleButton,
+    elements.shareResultButton,
+    elements.repeatResultButton,
+    elements.captureDuration,
+    elements.minimumConfidence,
+    elements.analysisMode,
+    elements.fileInput,
+    elements.clearLibraryButton,
+    elements.clearHistoryButton,
+    elements.adminSelectFilesButton,
+    elements.adminSearchInput,
+    elements.adminTagFilter,
+    elements.adminNewTagInput,
+    elements.adminAddTagButton,
+    elements.localHelpButton,
+    elements.adminLoginSubmitButton,
+    elements.adminLoginCancelButton,
+    elements.adminLoginCloseButton,
+  ];
+
+  document.querySelectorAll(".bottom-nav [data-nav-target]").forEach((button) => {
+    controls.push(button);
+  });
+
+  controls.forEach((control) => {
+    if (!control) {
+      return;
+    }
+    control.disabled = Boolean(isLocked);
+  });
+
+  if (elements.listenButton) {
+    elements.listenButton.disabled = Boolean(isLocked) && !allowListenButton;
+  }
 }
 
 function setAppLoadingState(isLoading, options = {}) {

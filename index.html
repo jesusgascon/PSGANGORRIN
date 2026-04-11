@@ -38,6 +38,27 @@
       </div>
     </div>
 
+    <div id="analysisOverlay" class="analysis-overlay" role="status" aria-live="polite" hidden>
+      <div id="analysisCard" class="analysis-card glass" tabindex="-1">
+        <span class="analysis-kicker">Analizando audio captado</span>
+        <h2 id="analysisTitle" class="analysis-title">Comparando el toque</h2>
+        <p id="analysisMeta" class="analysis-meta">
+          Midiendo patrón, timbre, landmarks y coincidencias con la biblioteca.
+        </p>
+        <div class="analysis-visual" aria-hidden="true">
+          <span class="analysis-orbit analysis-orbit--outer"></span>
+          <span class="analysis-orbit analysis-orbit--inner"></span>
+          <span class="analysis-core"></span>
+          <span class="analysis-spark analysis-spark--a"></span>
+          <span class="analysis-spark analysis-spark--b"></span>
+          <span class="analysis-spark analysis-spark--c"></span>
+        </div>
+        <p id="analysisProgressLabel" class="analysis-progress__label">
+          Esto puede tardar unos segundos según la duración de la escucha.
+        </p>
+      </div>
+    </div>
+
     <div id="localModeBanner" class="local-mode-banner" hidden>
       <div class="local-mode-banner__content">
         <strong>Modo local detectado</strong>
