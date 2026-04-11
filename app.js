@@ -202,44 +202,100 @@ const elements = {
   appToast: document.querySelector("#appToast"),
   appToastTitle: document.querySelector("#appToastTitle"),
   appToastMessage: document.querySelector("#appToastMessage"),
+  startupOverlay: document.querySelector("#startupOverlay"),
+  startupCard: document.querySelector("#startupCard"),
+  startupProgress: document.querySelector("#startupProgress"),
+  startupTitle: document.querySelector("#startupTitle"),
+  startupMeta: document.querySelector("#startupMeta"),
+  startupProgressBar: document.querySelector("#startupProgressBar"),
+  startupProgressLabel: document.querySelector("#startupProgressLabel"),
 };
 
 boot();
 
 async function boot() {
-  await cleanupDevelopmentCaching();
-  renderRuntimeInfo();
-  loadSavedState();
-  await refreshAdminSession();
-  bindEvents();
-  setupMicrophonePermissionWatcher();
-  await refreshMicrophoneStatus();
-  syncSettingsUi();
-  syncModeUi();
-  await loadDetectionCalibration();
-  updateStatus("idle", "Cargando referencias");
-  await loadPersistedReferences();
-  await loadManifestReferences();
-  renderAll();
-  registerServiceWorker();
-  if (isFileProtocol()) {
-    elements.localModeBanner.hidden = false;
-    elements.localHelpCard.hidden = false;
-    updateStatus("ready", "Modo local");
+  try {
+    setAppLoadingState(true, {
+      title: "Preparando detector",
+      meta: "Cargando interfaz y comprobaciones básicas del dispositivo.",
+      progress: 4,
+    });
+    await cleanupDevelopmentCaching();
+    setAppLoadingState(true, {
+      title: "Cargando entorno",
+      meta: "Recuperando ajustes guardados y estado de la aplicación.",
+      progress: 12,
+    });
+    renderRuntimeInfo();
+    loadSavedState();
+    await refreshAdminSession();
+    bindEvents();
+    setupMicrophonePermissionWatcher();
+    setAppLoadingState(true, {
+      title: "Comprobando micrófono",
+      meta: "Verificando permisos y disponibilidad del dispositivo de entrada.",
+      progress: 22,
+    });
+    await refreshMicrophoneStatus();
+    syncSettingsUi();
+    syncModeUi();
+    setAppLoadingState(true, {
+      title: "Cargando calibración",
+      meta: "Aplicando límites y perfil de detección para el modo actual.",
+      progress: 34,
+    });
+    await loadDetectionCalibration();
+    updateStatus("idle", "Cargando referencias");
+    setAppLoadingState(true, {
+      title: "Recuperando biblioteca local",
+      meta: "Leyendo referencias persistidas en este navegador.",
+      progress: 48,
+    });
+    await loadPersistedReferences();
+    setAppLoadingState(true, {
+      title: "Cargando base común",
+      meta: "Abriendo el manifest y preparando los audios compartidos.",
+      progress: 62,
+    });
+    await loadManifestReferences();
+    setAppLoadingState(true, {
+      title: "Finalizando arranque",
+      meta: "Actualizando interfaz y dejando la app lista para escuchar.",
+      progress: 92,
+    });
+    renderAll();
+    registerServiceWorker();
+    if (isFileProtocol()) {
+      elements.localModeBanner.hidden = false;
+      elements.localHelpCard.hidden = false;
+      updateStatus("ready", "Modo local");
+      updateResult({
+        name: "App cargada en modo local",
+        meta: `Protocolo detectado: ${window.location.protocol}. Si abres con file://, la carga automática desde manifest.json y la instalación PWA quedan desactivadas. Puedes añadir mp3 manualmente en administración.`,
+        confidence: 0,
+        matches: [],
+        analysis: null,
+      });
+      return;
+    }
+
+    updateStatus(
+      state.references.length ? "ready" : "idle",
+      state.references.length ? "Listo para escuchar" : "Sin referencias cargadas",
+    );
+  } catch (error) {
+    console.error("Error durante el arranque", error);
+    updateStatus("idle", "Error de arranque");
     updateResult({
-      name: "App cargada en modo local",
-      meta: `Protocolo detectado: ${window.location.protocol}. Si abres con file://, la carga automática desde manifest.json y la instalación PWA quedan desactivadas. Puedes añadir mp3 manualmente en administración.`,
+      name: "No se pudo iniciar la app",
+      meta: "Ha fallado la carga inicial de la biblioteca o de los ajustes. Recarga la pagina; si persiste, revisa la consola del navegador.",
       confidence: 0,
       matches: [],
       analysis: null,
     });
-    return;
+  } finally {
+    setAppLoadingState(false);
   }
-
-  updateStatus(
-    state.references.length ? "ready" : "idle",
-    state.references.length ? "Listo para escuchar" : "Sin referencias cargadas",
-  );
 }
 
 function bindEvents() {
@@ -1418,18 +1474,33 @@ function processCapturedSignal(inputSignal, capturedSeconds) {
   }
 
   const ambiguity = getMatchAmbiguity(results);
-  if (!isReliableMatch(bestMatch, state.settings) || ambiguity) {
+  const reliableMatch = isReliableMatch(bestMatch, state.settings);
+  const probableFieldMatch = state.settings.analysisMode === "field" && isProbableFieldMatch(bestMatch);
+  if (!reliableMatch || ambiguity) {
     const ambiguityMeta = ambiguity
-      ? `Resultado parecido entre "${bestMatch.reference.name}" y "${ambiguity.reference.name}". ${formatCaptureDiagnostics(features)} ${formatWindowDiagnostics(candidate)} Repite la escucha más cerca del altavoz o del tambor para confirmar.`
-      : `Resultado no concluyente tras ${capturedSeconds.toFixed(1)} s de escucha. ${buildCaptureAdvice(features)}`;
+      ? probableFieldMatch
+        ? `Posible toque: "${bestMatch.reference.name}" (${getVisibleConfidence(bestMatch)}%). También se parece a "${ambiguity.reference.name}". ${formatCaptureDiagnostics(features)} ${formatWindowDiagnostics(candidate)} No está confirmado; repite la escucha más cerca del altavoz o del tambor para asegurar el resultado.`
+        : `Resultado parecido entre "${bestMatch.reference.name}" y "${ambiguity.reference.name}". ${formatCaptureDiagnostics(features)} ${formatWindowDiagnostics(candidate)} Repite la escucha más cerca del altavoz o del tambor para confirmar.`
+      : probableFieldMatch
+        ? `Posible toque: "${bestMatch.reference.name}" (${getVisibleConfidence(bestMatch)}%). ${formatCaptureDiagnostics(features)} ${formatWindowDiagnostics(candidate)} La coincidencia parece buena, pero aún no está confirmada.`
+        : `Resultado no concluyente tras ${capturedSeconds.toFixed(1)} s de escucha. ${buildCaptureAdvice(features)}`;
     updateResult({
-      name: ambiguity ? "Resultado ambiguo" : "Sin detección fiable",
+      name: ambiguity
+        ? probableFieldMatch
+          ? `Posible toque ambiguo: ${bestMatch.reference.name}`
+          : "Resultado ambiguo"
+        : probableFieldMatch
+          ? `Posible toque: ${bestMatch.reference.name}`
+          : "Sin detección fiable",
       meta: ambiguityMeta,
-      confidence: 0,
+      confidence: probableFieldMatch ? getVisibleConfidence(bestMatch) : 0,
       matches: results,
       analysis: features,
     });
-    updateStatus("idle", ambiguity ? "Ambiguo" : "No concluyente");
+    updateStatus(
+      probableFieldMatch ? "probable" : ambiguity ? "ambiguous" : "idle",
+      probableFieldMatch ? "Probable" : ambiguity ? "Ambiguo" : "No concluyente",
+    );
     resetIdleUi();
     return;
   }
@@ -1488,6 +1559,11 @@ function updateMeter(samples) {
 
 async function loadManifestReferences() {
   if (isFileProtocol()) {
+    setAppLoadingState(true, {
+      title: "Modo local detectado",
+      meta: "Se omite la base común porque la app está abierta con file://.",
+      progress: 80,
+    });
     return;
   }
 
@@ -1505,6 +1581,7 @@ async function loadManifestReferences() {
     state.diagnostics.commonEntries = entries.length;
     state.diagnostics.commonLoaded = 0;
     state.diagnostics.commonFailed = 0;
+    updateBootManifestProgress(0, entries.length, "Leyendo manifest de la base común.");
     if (elements.adminCommonMessage) {
       elements.adminCommonMessage.hidden = false;
       elements.adminCommonMessage.textContent = `Manifest leído: ${entries.length} referencias comunes detectadas.`;
@@ -1543,6 +1620,7 @@ async function loadManifestReferences() {
       });
       if (featureEntry?.features) {
         loadedCount += 1;
+        updateBootManifestProgress(loadedCount, entries.length, "Aplicando referencias precomputadas.");
       }
     }
 
@@ -1587,10 +1665,12 @@ async function loadManifestReferences() {
             state.diagnostics.commonLoaded = loadedCount;
             renderLibrary();
             refreshHeaderStats();
+            updateBootManifestProgress(loadedCount, entries.length, "Procesando audios de la base común.");
           } catch (error) {
             state.diagnostics.commonFailed += 1;
             markReferenceAnalysisFailed(`manifest:${entry.file}`);
             console.warn(`No se pudo procesar ${entry.file}`, error);
+            updateBootManifestProgress(loadedCount + state.diagnostics.commonFailed, entries.length, "Procesando audios de la base común.");
           }
         }),
     );
@@ -1626,6 +1706,11 @@ async function loadManifestReferences() {
     refreshHeaderStats();
   } catch (error) {
     console.warn("No se pudo cargar el manifest de referencias", error);
+    setAppLoadingState(true, {
+      title: "Base común no disponible",
+      meta: "No se pudo leer el manifest compartido. La app seguirá con las referencias locales disponibles.",
+      progress: 78,
+    });
     if (elements.adminCommonMessage) {
       elements.adminCommonMessage.hidden = false;
       elements.adminCommonMessage.textContent =
@@ -3346,11 +3431,14 @@ function getMatchAmbiguity(matches, modeKey = state.settings.analysisMode) {
     return null;
   }
 
-  const minimumMargin = detectionLimit("minTopMatchMargin", modeKey);
+  const bestStrongLeader = modeKey === "field" && isStrongFieldLeader(best);
+  const minimumMargin = modeKey === "field" && bestStrongLeader
+    ? Math.max(6, detectionLimit("minTopMatchMargin", modeKey) - 3)
+    : detectionLimit("minTopMatchMargin", modeKey);
   const minimumPlausibleConfidence = Math.max(
     detectionLimit("minMatchConfidence", modeKey) - 8,
     state.settings.minimumConfidence - 8,
-  );
+  ) + (modeKey === "field" && bestStrongLeader ? 4 : 0);
 
   return matches.slice(1).find((candidate) => {
     const margin = best.confidence - candidate.confidence;
@@ -3368,11 +3456,36 @@ function getMatchAmbiguity(matches, modeKey = state.settings.analysisMode) {
       diagnostics.landmarkSimilarity >= (diagnostics.slowPatternProfile ? 0.24 : 0.28);
     const candidateIsPlausible =
       candidate.confidence >= minimumPlausibleConfidence &&
-      candidate.evidenceScore >= detectionLimit("minMatchEvidence", modeKey) &&
+      candidate.evidenceScore >= detectionLimit("minMatchEvidence", modeKey) + (modeKey === "field" && bestStrongLeader ? 0.03 : 0) &&
       (hasPlausibleVotes || hasPlausibleFieldPattern);
 
     return margin <= minimumMargin && candidateIsPlausible;
   }) || null;
+}
+
+function isStrongFieldLeader(match) {
+  const diagnostics = match?.diagnostics || {};
+  return (
+    diagnostics.patternScore >= 0.84 &&
+    diagnostics.timbreScore >= 0.67 &&
+    diagnostics.envelopeSimilarity >= 0.82 &&
+    diagnostics.segmentConsistency >= 0.79 &&
+    diagnostics.landmarkSimilarity >= 0.34 &&
+    match.evidenceScore >= detectionLimit("minMatchEvidence", "field") + 0.08
+  );
+}
+
+function isProbableFieldMatch(match) {
+  const diagnostics = match?.diagnostics || {};
+  return (
+    match &&
+    match.confidence >= Math.max(state.settings.minimumConfidence + 10, 58) &&
+    diagnostics.patternScore >= 0.8 &&
+    diagnostics.timbreScore >= 0.64 &&
+    diagnostics.envelopeSimilarity >= 0.78 &&
+    diagnostics.segmentConsistency >= 0.74 &&
+    diagnostics.landmarkSimilarity >= 0.3
+  );
 }
 
 function applyFieldLeadershipBonuses(scored) {
@@ -4102,6 +4215,77 @@ function getFilteredReferences() {
 function updateStatus(kind, text) {
   elements.statusPill.className = `status-pill ${kind}`;
   elements.statusPill.textContent = text;
+}
+
+function setAppLoadingState(isLoading, options = {}) {
+  if (!elements.startupOverlay) {
+    return;
+  }
+
+  document.body.classList.toggle("app-loading", isLoading);
+  document.body.setAttribute("aria-busy", isLoading ? "true" : "false");
+  elements.startupOverlay.hidden = !isLoading;
+
+  if (options.title && elements.startupTitle) {
+    elements.startupTitle.textContent = options.title;
+  }
+  if (options.meta && elements.startupMeta) {
+    elements.startupMeta.textContent = options.meta;
+  }
+  if (typeof options.progress === "number") {
+    const safeProgress = Math.max(0, Math.min(100, Math.round(options.progress)));
+    elements.startupProgressBar.style.width = `${safeProgress}%`;
+    elements.startupProgressLabel.textContent = `${safeProgress}%`;
+    elements.startupProgress?.setAttribute("aria-valuenow", String(safeProgress));
+  }
+
+  if (isLoading) {
+    elements.startupCard?.focus({ preventScroll: true });
+  }
+
+  [document.querySelector(".app-shell"), elements.localModeBanner].forEach((container) => {
+    if (!container) {
+      return;
+    }
+    if (isLoading) {
+      container.setAttribute("inert", "");
+      container.setAttribute("aria-hidden", "true");
+    } else {
+      container.removeAttribute("inert");
+      container.removeAttribute("aria-hidden");
+    }
+  });
+
+  const disabled = Boolean(isLoading);
+  [
+    elements.listenButton,
+    elements.modeToggleButton,
+    elements.shareResultButton,
+    elements.repeatResultButton,
+    elements.captureDuration,
+    elements.minimumConfidence,
+    elements.analysisMode,
+    elements.fileInput,
+    elements.clearLibraryButton,
+    elements.clearHistoryButton,
+    elements.adminSelectFilesButton,
+  ].forEach((control) => {
+    if (control) {
+      control.disabled = disabled;
+    }
+  });
+}
+
+function updateBootManifestProgress(processed, total, message) {
+  if (!elements.startupOverlay?.hidden) {
+    const ratio = total > 0 ? processed / total : 1;
+    const progress = 62 + ratio * 24;
+    setAppLoadingState(true, {
+      title: "Cargando base común",
+      meta: `${message} ${processed}/${total || 0} referencias revisadas.`,
+      progress,
+    });
+  }
 }
 
 function updateResult({ name, meta, confidence, matches, analysis }) {

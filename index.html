@@ -15,6 +15,29 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
+    <div id="startupOverlay" class="startup-overlay" role="status" aria-live="polite">
+      <div id="startupCard" class="startup-card glass" tabindex="-1">
+        <span class="startup-kicker">Inicializando CofraBeat</span>
+        <h2 id="startupTitle" class="startup-title">Preparando detector</h2>
+        <p id="startupMeta" class="startup-meta">
+          Cargando referencias, ajustes y comprobaciones del dispositivo.
+        </p>
+        <div
+          id="startupProgress"
+          class="startup-progress"
+          role="progressbar"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="0"
+          aria-labelledby="startupTitle"
+          aria-describedby="startupMeta startupProgressLabel"
+        >
+          <div id="startupProgressBar" class="startup-progress__bar"></div>
+        </div>
+        <p id="startupProgressLabel" class="startup-progress__label">0%</p>
+      </div>
+    </div>
+
     <div id="localModeBanner" class="local-mode-banner" hidden>
       <div class="local-mode-banner__content">
         <strong>Modo local detectado</strong>

@@ -15,6 +15,7 @@ from analyze_capture import analyze_best_candidate  # noqa: E402
 from library_manifest import decode_audio  # noqa: E402
 from validate_detection import (  # noqa: E402
     get_match_ambiguity,
+    is_probable_field_match,
     is_reliable_match,
     is_usable_capture,
     load_limits,
@@ -51,6 +52,7 @@ def main() -> None:
 
     summary = {
         "confirmed": 0,
+        "probable": 0,
         "unconfirmed": 0,
         "ambiguous": 0,
         "wrong": 0,
@@ -87,6 +89,7 @@ def main() -> None:
         )
         ambiguity = get_match_ambiguity(matches, limits, args.minimum_confidence, args.mode) if matches else None
         reliable = bool(best and is_reliable_match(best, limits, args.minimum_confidence, args.mode) and not ambiguity)
+        probable = bool(best and is_probable_field_match(best, args.minimum_confidence, args.mode))
 
         print(f"Tempo: {features['tempoEstimate']:.1f} bpm")
         print(f"RMS: {features['rms']:.4f} · Calidad: {features['signalQuality']:.3f}")
@@ -102,7 +105,12 @@ def main() -> None:
             print(f"Estado: OK CONFIRMADO · {best['reference'].get('name')} ({best['confidence']}%)")
         elif ambiguity:
             summary["ambiguous"] += 1
-            if best and best["reference"].get("file") == expected_file:
+            if probable and best and best["reference"].get("file") == expected_file:
+                print(
+                    "Estado: PROBABLE AMBIGUO · correcto primero, pero sin confirmar · "
+                    f"{best['reference'].get('name')} / {ambiguity['reference'].get('name')}"
+                )
+            elif best and best["reference"].get("file") == expected_file:
                 print(
                     "Estado: AMBIGUO · correcto primero, pero sin confirmar · "
                     f"{best['reference'].get('name')} / {ambiguity['reference'].get('name')}"
@@ -117,6 +125,9 @@ def main() -> None:
                     "Estado: AMBIGUO · "
                     f"{best['reference'].get('name')} / {ambiguity['reference'].get('name')}"
                 )
+        elif probable and best and best["reference"].get("file") == expected_file:
+            summary["probable"] += 1
+            print(f"Estado: PROBABLE · {best['reference'].get('name')} ({best['confidence']}%)")
         elif best and best["reference"].get("file") == expected_file:
             summary["unconfirmed"] += 1
             print(f"Estado: OK NO CONFIRMADO · {best['reference'].get('name')} ({best['confidence']}%)")
@@ -148,6 +159,7 @@ def main() -> None:
 
     print("Resumen:")
     print(f"  OK confirmadas: {summary['confirmed']}")
+    print(f"  Probables: {summary['probable']}")
     print(f"  OK no confirmadas: {summary['unconfirmed']}")
     print(f"  Ambiguas: {summary['ambiguous']}")
     print(f"  Fallos reales: {summary['wrong']}")

@@ -177,12 +177,14 @@ def main() -> None:
 
     passed = [result for result in results if result["outcome"] == "confirmed"]
     ambiguous = [result for result in results if result["outcome"] == "ambiguous"]
+    probable = [result for result in results if result["outcome"] == "probable"]
     low_confidence = [result for result in results if result["outcome"] == "low_confidence"]
     wrong = [result for result in results if result["outcome"] == "wrong"]
     unusable = [result for result in results if result["outcome"] == "unusable"]
 
     print(f"Referencias validadas: {len(results)}")
     print(f"Confirmadas correctas: {len(passed)}")
+    print(f"Probables no confirmadas: {len(probable)}")
     print(f"Ambiguas no confirmadas: {len(ambiguous)}")
     print(f"Correctas por debajo del umbral: {len(low_confidence)}")
     print(f"Confusiones reales: {len(wrong)}")
@@ -192,6 +194,7 @@ def main() -> None:
     for result in results:
         status = {
             "confirmed": "OK",
+            "probable": "PROBABLE",
             "ambiguous": "AMBIGUO",
             "low_confidence": "BAJO",
             "wrong": "FALLO",
@@ -356,7 +359,7 @@ def validate_reference(
     ambiguity = get_match_ambiguity(matches, limits, args.minimum_confidence, args.mode)
     reliable = bool(best and is_reliable_match(best, limits, args.minimum_confidence, args.mode))
     expected_file = reference.get("file")
-    outcome = classify_outcome(best, matches, ambiguity, reliable, expected_file, usable)
+    outcome = classify_outcome(best, matches, ambiguity, reliable, expected_file, usable, args.minimum_confidence, args.mode)
 
     return {
         "outcome": outcome,
@@ -393,6 +396,8 @@ def classify_outcome(
     reliable: bool,
     expected_file: str,
     usable: bool,
+    minimum_confidence: float,
+    mode_key: str,
 ) -> str:
     if not usable:
         return "unusable"
@@ -403,11 +408,9 @@ def classify_outcome(
     if ambiguity:
         return "ambiguous"
     if not reliable:
-        return "low_confidence"
+        return "probable" if is_probable_field_match(best, minimum_confidence, mode_key) else "low_confidence"
     if best_file == expected_file:
         return "confirmed"
-    if best_file == expected_file:
-        return "low_confidence"
     return "wrong"
 
 
@@ -1062,10 +1065,16 @@ def get_match_ambiguity(
         return None
 
     best = matches[0]
+    best_strong_leader = mode_key == "field" and is_strong_field_leader(best, limits)
+    minimum_margin = (
+        max(6, limit_for(limits, "minTopMatchMargin", mode_key) - 3)
+        if mode_key == "field" and best_strong_leader
+        else limit_for(limits, "minTopMatchMargin", mode_key)
+    )
     minimum_plausible_confidence = max(
         limit_for(limits, "minMatchConfidence", mode_key) - 8,
         minimum_confidence - 8,
-    )
+    ) + (4 if mode_key == "field" and best_strong_leader else 0)
     for candidate in matches[1:]:
         margin = best["confidence"] - candidate["confidence"]
         diagnostics = candidate.get("diagnostics", {})
@@ -1086,12 +1095,39 @@ def get_match_ambiguity(
         )
         candidate_is_plausible = (
             candidate["confidence"] >= minimum_plausible_confidence
-            and candidate["evidenceScore"] >= limit_for(limits, "minMatchEvidence", mode_key)
+            and candidate["evidenceScore"] >= limit_for(limits, "minMatchEvidence", mode_key) + (0.03 if mode_key == "field" and best_strong_leader else 0)
             and (has_plausible_votes or has_plausible_field_pattern)
         )
-        if margin <= limit_for(limits, "minTopMatchMargin", mode_key) and candidate_is_plausible:
+        if margin <= minimum_margin and candidate_is_plausible:
             return candidate
     return None
+
+
+def is_strong_field_leader(match: dict | None, limits: dict) -> bool:
+    diagnostics = match.get("diagnostics", {}) if match else {}
+    return bool(
+        match
+        and diagnostics.get("patternScore", 0) >= 0.84
+        and diagnostics.get("timbreScore", 0) >= 0.67
+        and diagnostics.get("envelopeSimilarity", 0) >= 0.82
+        and diagnostics.get("segmentConsistency", 0) >= 0.79
+        and diagnostics.get("landmarkSimilarity", 0) >= 0.34
+        and match.get("evidenceScore", 0) >= limit_for(limits, "minMatchEvidence", "field") + 0.08
+    )
+
+
+def is_probable_field_match(match: dict | None, minimum_confidence: float, mode_key: str) -> bool:
+    diagnostics = match.get("diagnostics", {}) if match else {}
+    return bool(
+        match
+        and mode_key == "field"
+        and match.get("confidence", 0) >= max(minimum_confidence + 10, 58)
+        and diagnostics.get("patternScore", 0) >= 0.8
+        and diagnostics.get("timbreScore", 0) >= 0.64
+        and diagnostics.get("envelopeSimilarity", 0) >= 0.78
+        and diagnostics.get("segmentConsistency", 0) >= 0.74
+        and diagnostics.get("landmarkSimilarity", 0) >= 0.3
+    )
 
 
 def apply_field_leadership_bonuses(scored: list[dict]) -> None:

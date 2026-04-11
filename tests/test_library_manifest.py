@@ -1,5 +1,6 @@
 import json
 import shutil
+import tempfile
 import sys
 from pathlib import Path
 
@@ -56,15 +57,20 @@ def test_features_file_is_generated_when_ffmpeg_exists():
     if not shutil.which("ffmpeg"):
         return
 
-    features_path = write_features(PROJECT_ROOT)
-    assert features_path is not None
-    payload = json.loads(features_path.read_text(encoding="utf-8"))
-    references = payload["references"]
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_root = Path(tmpdir)
+        shutil.copytree(PROJECT_ROOT / "assets", tmp_root / "assets")
+        shutil.copytree(PROJECT_ROOT / "scripts", tmp_root / "scripts")
 
-    assert len(references) >= 5
-    assert any(reference.get("features") for reference in references)
-    ready = [reference for reference in references if reference.get("features")]
-    assert all(reference["features"]["peaksCount"] >= 0 for reference in ready)
-    assert all("fingerprints" in reference["features"] for reference in ready)
-    assert all("spectralProfile" in reference["features"] for reference in ready)
-    assert all("spectralFluxSeries" in reference["features"] for reference in ready)
+        features_path = write_features(tmp_root)
+        assert features_path is not None
+        payload = json.loads(features_path.read_text(encoding="utf-8"))
+        references = payload["references"]
+
+        assert len(references) >= 5
+        assert any(reference.get("features") for reference in references)
+        ready = [reference for reference in references if reference.get("features")]
+        assert all(reference["features"]["peaksCount"] >= 0 for reference in ready)
+        assert all("fingerprints" in reference["features"] for reference in ready)
+        assert all("spectralProfile" in reference["features"] for reference in ready)
+        assert all("spectralFluxSeries" in reference["features"] for reference in ready)

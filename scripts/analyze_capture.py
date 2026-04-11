@@ -15,6 +15,7 @@ from library_manifest import FEATURE_SAMPLE_RATE, analyse_samples, decode_audio 
 from validate_detection import (  # noqa: E402
     compare_against_references,
     get_match_ambiguity,
+    is_probable_field_match,
     is_reliable_match,
     is_usable_capture,
     limit_for,
@@ -63,6 +64,7 @@ def print_capture_result(capture_path: Path, references: list[dict], limits: dic
     best = matches[0] if matches else None
     ambiguity = get_match_ambiguity(matches, limits, args.minimum_confidence, args.mode) if matches else None
     reliable = bool(best and is_reliable_match(best, limits, args.minimum_confidence, args.mode) and not ambiguity)
+    probable = bool(best and is_probable_field_match(best, args.minimum_confidence, args.mode))
 
     print(f"Duracion: {features['durationSeconds']:.2f} s")
     if not candidate["is_full_capture"]:
@@ -95,8 +97,12 @@ def print_capture_result(capture_path: Path, references: list[dict], limits: dic
 
     if reliable:
         print(f"Resultado: {best['reference'].get('name')} ({best['confidence']}%)")
+    elif ambiguity and probable:
+        print(f"Resultado probable ambiguo: {best['reference'].get('name')} / {ambiguity['reference'].get('name')}")
     elif ambiguity:
         print(f"Resultado ambiguo: {best['reference'].get('name')} / {ambiguity['reference'].get('name')}")
+    elif probable:
+        print(f"Resultado probable: {best['reference'].get('name')} ({best['confidence']}%)")
     else:
         print("Sin deteccion fiable.")
 

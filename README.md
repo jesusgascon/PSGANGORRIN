@@ -34,8 +34,8 @@ La version actual puede considerarse estable para el flujo real de `Micro real` 
 Estado del dataset real de campo en la ultima tanda validada:
 
 - `18` capturas `OK confirmadas`
-- `2` capturas `OK no confirmadas`
-- `1` captura `ambigua`
+- `2` capturas `Probables`
+- `1` captura `Probable ambigua`
 - `0` fallos reales
 
 El unico bloque pendiente para la siguiente iteracion ya no es de arquitectura. Queda limitado a afinado fino de tres toques conflictivos:

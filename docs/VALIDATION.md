@@ -116,6 +116,8 @@ Cada bloque muestra:
 El validador separa los casos no confirmados. Si el segundo candidato queda dentro del margen de ambiguedad, incluso justo en el limite, no se confirma un ganador:
 
 - `OK`: la app confirmaria el toque correcto.
+- `PROBABLE`: el toque correcto queda primero con evidencia fuerte, pero aun no llega a confirmacion completa.
+- `PROBABLE AMBIGUO`: el toque correcto queda primero, pero sigue demasiado cerca de otro candidato fuerte.
 - `AMBIGUO`: hay dos toques muy cercanos; la app no debe confirmar ninguno.
 - `BAJO`: el toque correcto sale primero, pero por debajo del umbral.
 - `FALLO`: la app confirmaria un toque incorrecto.
@@ -208,7 +210,7 @@ Dataset real de campo actual:
 
 ```text
 OK confirmadas: 18
-OK no confirmadas: 2
+Probables: 2
 Ambiguas: 1
 Fallos reales: 0
 ```

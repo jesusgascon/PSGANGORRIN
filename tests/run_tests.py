@@ -9,6 +9,10 @@ from test_detection_calibration import (
     test_calibration_recommends_safe_minimums,
     test_percentile_interpolates_values,
 )
+from test_detection_outcomes import (
+    test_classify_outcome_marks_probable_field_match,
+    test_field_ambiguity_relaxes_for_strong_leader_but_keeps_plausible_second,
+)
 
 
 def main() -> None:
@@ -20,6 +24,8 @@ def main() -> None:
         test_features_file_is_generated_when_ffmpeg_exists,
         test_percentile_interpolates_values,
         test_calibration_recommends_safe_minimums,
+        test_classify_outcome_marks_probable_field_match,
+        test_field_ambiguity_relaxes_for_strong_leader_but_keeps_plausible_second,
     ]
 
     for test in tests:

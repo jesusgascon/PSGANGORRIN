@@ -14,6 +14,7 @@
   --warn: #f8be52;
   --danger: #ff6f91;
   --shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+  --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
@@ -48,6 +49,15 @@ body {
 body {
   overflow-x: hidden;
   padding-bottom: var(--safe-bottom);
+}
+
+body.app-loading {
+  overflow: hidden;
+}
+
+body.app-loading .app-shell {
+  pointer-events: none;
+  filter: saturate(0.75) blur(1px);
 }
 
 body::before {
@@ -114,7 +124,7 @@ body::after {
   z-index: 1;
   max-width: 720px;
   margin: 0 auto;
-  padding: 10px 10px calc(108px + var(--safe-bottom));
+  padding: calc(10px + var(--safe-top)) 10px calc(108px + var(--safe-bottom));
 }
 
 .ambient {
@@ -161,7 +171,7 @@ body::after {
 
 .topbar {
   position: sticky;
-  top: 0;
+  top: var(--safe-top);
   z-index: 40;
   margin-bottom: 14px;
   gap: 12px;
@@ -185,6 +195,75 @@ body::after {
   padding: 16px 12px calc(18px + var(--safe-bottom));
   background: rgba(2, 8, 18, 0.72);
   backdrop-filter: blur(18px);
+}
+
+.startup-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background:
+    radial-gradient(circle at top, rgba(216, 170, 79, 0.12), transparent 34%),
+    rgba(8, 4, 7, 0.72);
+  backdrop-filter: blur(18px);
+}
+
+.startup-card {
+  width: min(100%, 440px);
+  display: grid;
+  gap: 14px;
+  padding: 24px 22px;
+  border-radius: 24px;
+  text-align: center;
+  box-shadow: 0 24px 90px rgba(0, 0, 0, 0.48);
+}
+
+.startup-kicker {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.startup-title {
+  margin: 0;
+  font-size: 1.45rem;
+}
+
+.startup-meta {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.startup-progress {
+  width: 100%;
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.startup-progress__bar {
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background:
+    linear-gradient(90deg, rgba(216, 170, 79, 0.82), rgba(248, 190, 82, 0.98)),
+    var(--accent);
+  box-shadow: 0 0 18px rgba(216, 170, 79, 0.35);
+  transition: width 240ms ease;
+}
+
+.startup-progress__label {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--wax);
 }
 
 .admin-login-modal {
@@ -602,6 +681,15 @@ h3 {
     filter 220ms ease;
 }
 
+.listen-button:disabled,
+.secondary-button:disabled,
+.primary-button:disabled,
+.mobile-select:disabled,
+input:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
 .listen-ring,
 .listen-outer-mark,
 .listen-core,
@@ -882,12 +970,30 @@ h3 {
   color: var(--muted);
 }
 
+.status-pill::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.04);
+}
+
 .status-pill.ready {
   color: var(--ok);
 }
 
 .status-pill.listening {
   color: var(--accent);
+}
+
+.status-pill.probable {
+  color: var(--accent);
+}
+
+.status-pill.ambiguous {
+  color: var(--warn);
 }
 
 .status-pill.match {
@@ -1819,6 +1925,9 @@ h3 {
 .bottom-nav__item span:last-child {
   font-size: 0.7rem;
   letter-spacing: 0.02em;
+  line-height: 1.1;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 
 .bottom-nav__item.is-active .bottom-nav__icon,
@@ -2540,9 +2649,27 @@ code {
   }
 }
 
+@media (max-width: 380px) {
+  .bottom-nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .mode-user .app-shell,
+  .mode-admin .app-shell {
+    padding-bottom: calc(156px + var(--safe-bottom));
+  }
+
+  .bottom-nav__item,
+  .bottom-nav__item--primary,
+  .bottom-nav--admin .bottom-nav__item--primary {
+    min-height: 62px;
+  }
+}
+
 @media (min-width: 700px) {
   .app-shell {
-    padding: 24px 18px 40px;
+    padding: calc(24px + var(--safe-top)) 18px 40px;
   }
 
   .topbar {
@@ -2568,6 +2695,11 @@ code {
 
   .local-mode-banner {
     padding-inline: 22px;
+  }
+
+  .modal-backdrop {
+    align-items: center;
+    padding: 24px;
   }
 
   .bottom-nav {
