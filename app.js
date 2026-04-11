@@ -213,6 +213,8 @@ const elements = {
 
 boot();
 
+const BOOT_PROGRESS_FINAL_DELAY_MS = 180;
+
 async function boot() {
   try {
     setAppLoadingState(true, {
@@ -261,13 +263,19 @@ async function boot() {
     setAppLoadingState(true, {
       title: "Finalizando arranque",
       meta: "Actualizando interfaz y dejando la app lista para escuchar.",
-      progress: 92,
+      progress: 96,
     });
     renderAll();
     registerServiceWorker();
     if (isFileProtocol()) {
       elements.localModeBanner.hidden = false;
       elements.localHelpCard.hidden = false;
+      setAppLoadingState(true, {
+        title: "Arranque completado",
+        meta: "Modo local activo. Ya puedes empezar a usar la app.",
+        progress: 100,
+      });
+      await delay(BOOT_PROGRESS_FINAL_DELAY_MS);
       updateStatus("ready", "Modo local");
       updateResult({
         name: "App cargada en modo local",
@@ -279,6 +287,12 @@ async function boot() {
       return;
     }
 
+    setAppLoadingState(true, {
+      title: "Arranque completado",
+      meta: "Todo listo. El detector ya puede escuchar.",
+      progress: 100,
+    });
+    await delay(BOOT_PROGRESS_FINAL_DELAY_MS);
     updateStatus(
       state.references.length ? "ready" : "idle",
       state.references.length ? "Listo para escuchar" : "Sin referencias cargadas",
@@ -4279,13 +4293,17 @@ function setAppLoadingState(isLoading, options = {}) {
 function updateBootManifestProgress(processed, total, message) {
   if (!elements.startupOverlay?.hidden) {
     const ratio = total > 0 ? processed / total : 1;
-    const progress = 62 + ratio * 24;
+    const progress = 50 + ratio * 38;
     setAppLoadingState(true, {
       title: "Cargando base común",
       meta: `${message} ${processed}/${total || 0} referencias revisadas.`,
       progress,
     });
   }
+}
+
+function delay(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function updateResult({ name, meta, confidence, matches, analysis }) {
