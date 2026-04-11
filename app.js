@@ -105,6 +105,7 @@ const state = {
   recordingChunks: [],
   isListening: false,
   stopTimer: null,
+  listenTicker: null,
   captureStartedAt: null,
   history: [],
   lastResult: null,
@@ -135,6 +136,7 @@ const elements = {
   listenButton: document.querySelector("#listenButton"),
   listenLabel: document.querySelector("#listenLabel"),
   listenHint: document.querySelector("#listenHint"),
+  listenTimer: document.querySelector("#listenTimer"),
   meterFill: document.querySelector("#meterFill"),
   confidenceValue: document.querySelector("#confidenceValue"),
   statusPill: document.querySelector("#statusPill"),
@@ -901,6 +903,7 @@ function persistMode() {
 
 function syncSettingsUi() {
   const mode = MODE_PRESETS[state.settings.analysisMode] || MODE_PRESETS.fast;
+  state.settings.captureSeconds = clamp(Math.round(Number(state.settings.captureSeconds) || 10), 3, 30);
   elements.captureDuration.value = String(state.settings.captureSeconds);
   elements.captureDurationValue.textContent = `${state.settings.captureSeconds} s`;
   elements.minimumConfidence.value = String(state.settings.minimumConfidence);
@@ -908,6 +911,10 @@ function syncSettingsUi() {
   elements.analysisMode.value = state.settings.analysisMode;
   elements.modeLabel.textContent = mode.label;
   elements.listenHint.textContent = `${state.settings.captureSeconds} segundos`;
+  if (elements.listenTimer) {
+    elements.listenTimer.hidden = true;
+    elements.listenTimer.textContent = formatListeningCountdown(0, state.settings.captureSeconds);
+  }
   renderTagFilterOptions();
 }
 
@@ -1328,7 +1335,13 @@ async function startListening() {
   elements.listenButton.classList.add("is-listening");
   elements.listenButton.setAttribute("aria-label", "Parar escucha");
   elements.listenLabel.textContent = "Parar";
-  elements.listenHint.textContent = "Ver resultado";
+  elements.listenHint.textContent = "Escuchando";
+  if (elements.listenTimer) {
+    elements.listenTimer.hidden = false;
+    elements.listenTimer.textContent = formatListeningCountdown(0, state.settings.captureSeconds);
+  }
+  updateListeningCountdown();
+  state.listenTicker = window.setInterval(updateListeningCountdown, 200);
   updateStatus("listening", "Escuchando");
   updateResult({
     name: "Analizando ambiente",
@@ -1388,6 +1401,8 @@ async function stopListening({ manual = false } = {}) {
 
   window.clearTimeout(state.stopTimer);
   state.stopTimer = null;
+  window.clearInterval(state.listenTicker);
+  state.listenTicker = null;
   state.isListening = false;
   const capturedSeconds = getCapturedSeconds();
 
@@ -1395,6 +1410,10 @@ async function stopListening({ manual = false } = {}) {
   elements.listenButton.setAttribute("aria-label", "Escuchar");
   elements.listenLabel.textContent = "Procesando";
   elements.listenHint.textContent = "Comparando";
+  if (elements.listenTimer) {
+    elements.listenTimer.hidden = false;
+    elements.listenTimer.textContent = `${capturedSeconds.toFixed(1)} s captados`;
+  }
   updateStatus("ready", manual ? "Parado, procesando" : "Procesando");
   updateResult({
     name: manual ? "Escucha detenida" : "Escucha completada",
@@ -1554,10 +1573,31 @@ function cleanupListeningNodes() {
 
 function resetIdleUi() {
   state.captureStartedAt = null;
+  window.clearInterval(state.listenTicker);
+  state.listenTicker = null;
   elements.listenButton.setAttribute("aria-label", "Escuchar");
   elements.listenLabel.textContent = "Escuchar";
   elements.listenHint.textContent = `${state.settings.captureSeconds} segundos`;
+  if (elements.listenTimer) {
+    elements.listenTimer.hidden = true;
+    elements.listenTimer.textContent = formatListeningCountdown(0, state.settings.captureSeconds);
+  }
   elements.meterFill.style.width = "6%";
+}
+
+function updateListeningCountdown() {
+  if (!elements.listenTimer || !state.isListening || !state.captureStartedAt) {
+    return;
+  }
+
+  const elapsed = Math.min(state.settings.captureSeconds, getCapturedSeconds());
+  elements.listenTimer.textContent = formatListeningCountdown(elapsed, state.settings.captureSeconds);
+}
+
+function formatListeningCountdown(elapsedSeconds, totalSeconds) {
+  const elapsed = Math.max(0, elapsedSeconds);
+  const remaining = Math.max(0, totalSeconds - elapsed);
+  return `${elapsed.toFixed(1)} s transcurridos · ${remaining.toFixed(1)} s restantes`;
 }
 
 function updateMeter(samples) {

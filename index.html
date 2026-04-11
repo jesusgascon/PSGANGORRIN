@@ -113,7 +113,8 @@
                   </svg>
                 </span>
                 <span id="listenLabel">Escuchar</span>
-                <small id="listenHint">6 segundos</small>
+                <small id="listenHint">10 segundos</small>
+                <small id="listenTimer" class="listen-timer" hidden>0 s transcurridos · 10 s restantes</small>
               </span>
             </button>
 
@@ -213,7 +214,7 @@
                 id="captureDuration"
                 type="range"
                 min="3"
-                max="12"
+                max="30"
                 step="1"
                 value="10"
                 aria-describedby="captureDurationValue"

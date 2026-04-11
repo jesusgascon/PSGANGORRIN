@@ -834,6 +834,14 @@ input:disabled {
   color: var(--muted);
 }
 
+.listen-timer {
+  display: block;
+  max-width: 15ch;
+  margin: 0 auto;
+  line-height: 1.25;
+  color: var(--wax);
+}
+
 .listen-button.is-listening .listen-ring {
   animation-duration: 1.3s;
   background:
