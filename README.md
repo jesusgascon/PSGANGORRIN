@@ -24,6 +24,26 @@ No es una IA entrenada ni una copia completa de Shazam. Es un detector ligero de
 
 El proyecto esta preparado para uso local, pruebas en red Wi-Fi y publicacion estatica en GitHub Pages.
 
+La version actual puede considerarse estable para el flujo real de `Micro real` con la biblioteca incluida. El detector ya usa:
+
+- biblioteca `schemaVersion 5`
+- landmarks espectrales locales
+- comparacion por varias variantes/segmentos de cada referencia
+- ranking coherente entre app web, validacion CLI y analisis de capturas reales
+
+Estado del dataset real de campo en la ultima tanda validada:
+
+- `18` capturas `OK confirmadas`
+- `2` capturas `OK no confirmadas`
+- `1` captura `ambigua`
+- `0` fallos reales
+
+El unico bloque pendiente para la siguiente iteracion ya no es de arquitectura. Queda limitado a afinado fino de tres toques conflictivos:
+
+- `La Corona`
+- `Yenka`
+- `Lenta que no es lenta`
+
 Incluye:
 
 - Interfaz tipo app movil.
@@ -246,6 +266,8 @@ Para pruebas reproduciendo un MP3 en el ordenador y escuchando con el microfono,
 Si la app marca resultado ambiguo o sin deteccion fiable, no significa necesariamente que falle la biblioteca. Normalmente indica que la captura por microfono no llega clara, llega saturada o hay varios toques con patron muy parecido. En ese caso conviene repetir acercando el movil al altavoz/tambor, pero manteniendo distancia suficiente para que no sature.
 
 El perfil `Micro real` pesa menos los fingerprints exactos y da mas importancia al patron de golpes, envolvente, intervalos y timbre espectral general. Si un candidato gana solo por coincidencias locales pero el patron o el timbre no acompanan, se penaliza y la app tiende a dejarlo ambiguo.
+
+En la version actual, la app y los scripts CLI usan la misma logica de referencias y comparacion. Ya no hay divergencia entre lo que se ve en navegador y lo que sale en `validate_detection.py`, `analyze_capture.py` o `report_field_dataset.py`.
 
 Mas detalle en:
 

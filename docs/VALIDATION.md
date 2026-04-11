@@ -203,3 +203,18 @@ Dolor de la Madre de Dios, 20 ensayos
 ```
 
 Y en `Formacion` se mantiene el criterio conservador: sigue habiendo bastantes ambiguas, pero no aparecen confusiones reales en el ensayo dirigido.
+
+Dataset real de campo actual:
+
+```text
+OK confirmadas: 18
+OK no confirmadas: 2
+Ambiguas: 1
+Fallos reales: 0
+```
+
+Con este estado, la version puede darse por estable para uso y pruebas reales. El siguiente ciclo de trabajo queda reducido a mejorar la separacion de:
+
+- `La Corona`
+- `Yenka`
+- `Lenta que no es lenta`

@@ -2,6 +2,10 @@
 
 ## En desarrollo
 
+- La deteccion `field` queda estabilizada con biblioteca `schemaVersion 5`, landmarks espectrales locales, agregacion multi-variante por referencia y ranking coherente entre app web y scripts CLI.
+- El dataset real de campo queda sin fallos reales en la tanda actual: `18 OK confirmadas`, `2 OK no confirmadas`, `1 ambigua`, `0 fallos reales`.
+- `Zaragoza` deja de ser un caso roto en micro real: en las pruebas nuevas queda siempre primero y pasa a estados `OK confirmado`, `OK no confirmado` o `ambiguo`, segun la calidad de la captura.
+- El siguiente ciclo queda acotado a afinado fino de tres toques conflictivos: `La Corona`, `Yenka` y `Lenta que no es lenta`.
 - Ajuste visual de la barra inferior del modo usuario en movil para evitar botones cortados o desalineados.
 - El boton Escuchar de la barra inferior queda alineado tambien al terminar la escucha.
 - Cache publica actualizada para que GitHub Pages entregue estilos nuevos tambien bajo la ruta `/PSGANGORRIN/`.
