@@ -225,6 +225,7 @@ body::after {
   padding: 24px 22px;
   border-radius: 24px;
   text-align: center;
+  justify-items: center;
   box-shadow: 0 24px 90px rgba(0, 0, 0, 0.48);
 }
 
@@ -295,6 +296,7 @@ body::after {
   padding: 28px 24px;
   border-radius: 26px;
   text-align: center;
+  justify-items: center;
   box-shadow: 0 26px 96px rgba(0, 0, 0, 0.52);
 }
 
@@ -309,6 +311,8 @@ body::after {
 .analysis-title {
   margin: 0;
   font-size: 1.55rem;
+  max-width: 14ch;
+  text-wrap: balance;
 }
 
 .analysis-meta,
@@ -316,12 +320,16 @@ body::after {
   margin: 0;
   color: var(--muted);
   line-height: 1.5;
+  max-width: 34ch;
+  text-wrap: pretty;
 }
 
 .analysis-visual {
   position: relative;
-  width: 190px;
-  height: 190px;
+  width: min(46vw, 190px);
+  height: min(46vw, 190px);
+  min-width: 148px;
+  min-height: 148px;
   margin: 4px auto;
   display: grid;
   place-items: center;
@@ -353,8 +361,10 @@ body::after {
 }
 
 .analysis-core {
-  width: 78px;
-  height: 78px;
+  width: min(18vw, 78px);
+  height: min(18vw, 78px);
+  min-width: 62px;
+  min-height: 62px;
   background:
     radial-gradient(circle at 35% 30%, rgba(255, 247, 235, 0.7), transparent 32%),
     linear-gradient(180deg, rgba(216, 170, 79, 0.92), rgba(122, 30, 42, 0.92));
@@ -365,8 +375,8 @@ body::after {
 }
 
 .analysis-spark {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   background: radial-gradient(circle, rgba(255, 247, 235, 0.95), rgba(216, 170, 79, 0.22));
   box-shadow: 0 0 18px rgba(243, 226, 195, 0.34);
 }
@@ -2877,6 +2887,36 @@ code {
   .app-toast {
     bottom: calc(104px + var(--safe-bottom));
   }
+
+  .startup-overlay,
+  .analysis-overlay {
+    padding: 14px;
+  }
+
+  .startup-card,
+  .analysis-card {
+    width: min(100%, 360px);
+    gap: 12px;
+    padding: 22px 18px;
+    border-radius: 22px;
+  }
+
+  .startup-title,
+  .analysis-title {
+    max-width: 12ch;
+    font-size: 1.3rem;
+    line-height: 1.15;
+    text-align: center;
+  }
+
+  .startup-meta,
+  .analysis-meta,
+  .startup-progress__label,
+  .analysis-progress__label {
+    max-width: 28ch;
+    font-size: 0.94rem;
+    text-align: center;
+  }
 }
 
 @media (max-width: 380px) {
@@ -2930,6 +2970,18 @@ code {
   .modal-backdrop {
     align-items: center;
     padding: 24px;
+  }
+
+  .startup-card,
+  .analysis-card,
+  .startup-title,
+  .analysis-title,
+  .startup-meta,
+  .analysis-meta,
+  .startup-progress__label,
+  .analysis-progress__label {
+    text-align: center;
+    justify-self: center;
   }
 
   .bottom-nav {

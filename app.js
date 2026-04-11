@@ -1417,10 +1417,10 @@ async function stopListening({ manual = false } = {}) {
   elements.listenButton.classList.remove("is-listening");
   elements.listenButton.setAttribute("aria-label", "Escuchar");
   elements.listenLabel.textContent = "Procesando";
-  elements.listenHint.textContent = "Comparando";
+  elements.listenHint.textContent = "Analizando";
   if (elements.listenTimer) {
-    elements.listenTimer.hidden = false;
-    elements.listenTimer.textContent = `${capturedSeconds.toFixed(1)} s captados`;
+    elements.listenTimer.hidden = true;
+    elements.listenTimer.textContent = formatListeningCountdown(0, state.settings.captureSeconds);
   }
   setAnalysisState(true, {
     title: manual ? "Procesando escucha detenida" : "Analizando el toque",
@@ -1442,25 +1442,25 @@ async function stopListening({ manual = false } = {}) {
   cleanupListeningNodes();
 
   try {
-    await delay(90);
+    await delay(180);
     setAnalysisState(true, {
       title: "Analizando el toque",
       meta: "Midiendo patrón rítmico y limpiando la captura para la comparación.",
       label: `Audio captado: ${capturedSeconds.toFixed(1)} s · filtrando y extrayendo rasgos.`,
     });
-    await delay(220);
+    await delay(360);
     setAnalysisState(true, {
       title: "Cruzando la biblioteca",
       meta: "Comparando landmarks, ventanas fuertes y coincidencias temporales.",
       label: `Audio captado: ${capturedSeconds.toFixed(1)} s · buscando el mejor encaje entre referencias.`,
     });
-    await delay(220);
+    await delay(420);
     setAnalysisState(true, {
       title: "Preparando resultado final",
       meta: "Ordenando candidatos y calculando el nivel de confirmación.",
       label: `Audio captado: ${capturedSeconds.toFixed(1)} s · cerrando diagnóstico visual.`,
     });
-    await delay(180);
+    await delay(420);
     processCapturedSignal(inputSignal, capturedSeconds);
   } catch (error) {
     console.error("No se pudo procesar la captura", error);
