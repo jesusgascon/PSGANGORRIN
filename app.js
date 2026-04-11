@@ -40,6 +40,11 @@ const MAX_CAPTURE_CANDIDATES = 9;
 const REFERENCE_SEGMENT_SECONDS = [8, 10, 12];
 const MAX_REFERENCE_SEGMENTS = 8;
 const SPECTRAL_BAND_FREQUENCIES = [90, 140, 220, 320, 450, 650, 900, 1300];
+const REFERENCE_SEGMENT_STRIDE_SECONDS = 2.5;
+const SPECTRAL_LANDMARK_PEAKS_PER_FRAME = 2;
+const SPECTRAL_LANDMARK_MIN_PEAK = 0.18;
+const SPECTRAL_LANDMARK_LOOKAHEAD_FRAMES = 8;
+const SPECTRAL_LANDMARK_MAX_NEIGHBORS = 4;
 const FINGERPRINT_MAX_NEIGHBORS = 5;
 const FINGERPRINT_MAX_INTERVAL_SECONDS = 3.2;
 const FINGERPRINT_INTERVAL_STEP = 0.05;
@@ -61,6 +66,7 @@ const STORAGE_KEYS = {
   settingsVersion: "cofrabeat:settings-version",
 };
 const SETTINGS_SCHEMA_VERSION = 4;
+const FEATURE_SCHEMA_VERSION = 5;
 const DB_NAME = "cofrabeat-library";
 const DB_VERSION = 2;
 const DB_STORE_REFERENCES = "references";
@@ -1640,7 +1646,7 @@ async function loadPrecomputedFeatureMap() {
     const payload = await response.json();
     const entries = Array.isArray(payload.references) ? payload.references : [];
     entries.forEach((entry) => {
-      if (!entry.file || !entry.features || entry.error) {
+      if (!entry.file || !entry.features || entry.error || !hasCompatibleFeatureSet(entry.features)) {
         return;
       }
 
@@ -1651,6 +1657,16 @@ async function loadPrecomputedFeatureMap() {
   }
 
   return featuresByFile;
+}
+
+function hasCompatibleFeatureSet(features) {
+  return Boolean(
+    features &&
+    features.schemaVersion === FEATURE_SCHEMA_VERSION &&
+    Array.isArray(features.spectralLandmarks) &&
+    typeof features.spectralLandmarksCount === "number" &&
+    Array.isArray(features.strongSegments),
+  );
 }
 
 async function loadFilesAsReferences(files) {
@@ -1847,6 +1863,8 @@ function analyseSignal(signal, sampleRate, includeSegments = false) {
     spectralProfile: spectral.profile,
     spectralFlux: resampleVector(spectral.fluxSeries, ENVELOPE_BINS),
     spectralFluxSeries: [...spectral.fluxSeries],
+    spectralLandmarks: spectral.landmarks,
+    spectralLandmarksCount: spectral.landmarks.length,
     signalQuality: estimateSignalQuality(
       rawStats,
       peakIndexes.length,
@@ -1869,6 +1887,7 @@ function buildStrongReferenceSegments(signal, sampleRate) {
   const frames = measureReferenceEnergyFrames(signal, sampleRate);
   const centers = findStrongReferenceCenters(frames);
   centers.push(...findDistributedReferenceCenters(durationSeconds));
+  centers.push(...findDenseReferenceCenters(durationSeconds));
   const segments = [];
   const seen = new Set();
 
@@ -1918,6 +1937,21 @@ function buildStrongReferenceSegments(signal, sampleRate) {
   });
 
   return selected.slice(0, MAX_REFERENCE_SEGMENTS);
+}
+
+function findDenseReferenceCenters(durationSeconds) {
+  if (durationSeconds <= Math.min(...REFERENCE_SEGMENT_SECONDS) + 1) {
+    return [];
+  }
+
+  const centers = [];
+  let cursor = Math.min(...REFERENCE_SEGMENT_SECONDS) / 2;
+  const limit = Math.max(cursor, durationSeconds - Math.min(...REFERENCE_SEGMENT_SECONDS) / 2);
+  while (cursor <= limit) {
+    centers.push(Number(cursor.toFixed(3)));
+    cursor += REFERENCE_SEGMENT_STRIDE_SECONDS;
+  }
+  return centers;
 }
 
 function measureReferenceEnergyFrames(signal, sampleRate) {
@@ -2344,6 +2378,7 @@ function buildSpectralSignature(signal, sampleRate) {
     return {
       profile: Array.from({ length: SPECTRAL_BAND_FREQUENCIES.length }, () => 0),
       fluxSeries: Array.from({ length: ENVELOPE_BINS }, () => 0),
+      landmarks: [],
     };
   }
 
@@ -2374,6 +2409,7 @@ function buildSpectralSignature(signal, sampleRate) {
     return {
       profile: Array.from({ length: SPECTRAL_BAND_FREQUENCIES.length }, () => 0),
       fluxSeries: Array.from({ length: ENVELOPE_BINS }, () => 0),
+      landmarks: [],
     };
   }
 
@@ -2389,7 +2425,80 @@ function buildSpectralSignature(signal, sampleRate) {
   return {
     profile: normalizeArray(profile),
     fluxSeries: smoothVector(normalizeArray(fluxValues), 2),
+    landmarks: buildSpectralLandmarks(bandFrames, hop / sampleRate),
   };
+}
+
+function buildSpectralLandmarks(bandFrames, hopSeconds) {
+  if (!bandFrames?.length) {
+    return [];
+  }
+
+  const framePeaks = bandFrames.map((frame) => extractSpectralPeakBands(frame));
+  const landmarks = [];
+
+  framePeaks.forEach((anchorBands, anchorFrame) => {
+    if (!anchorBands.length) {
+      return;
+    }
+
+    anchorBands.forEach((anchorBand) => {
+      let neighborCount = 0;
+      const maxTargetFrame = Math.min(framePeaks.length - 1, anchorFrame + SPECTRAL_LANDMARK_LOOKAHEAD_FRAMES);
+      for (let targetFrame = anchorFrame + 1; targetFrame <= maxTargetFrame; targetFrame += 1) {
+        const targetBands = framePeaks[targetFrame];
+        if (!targetBands.length) {
+          continue;
+        }
+
+        const deltaFrames = targetFrame - anchorFrame;
+        for (const targetBand of targetBands) {
+          landmarks.push({
+            hash: `${anchorBand}:${targetBand}:${deltaFrames}`,
+            time: Number((anchorFrame * hopSeconds).toFixed(3)),
+          });
+          neighborCount += 1;
+          if (neighborCount >= SPECTRAL_LANDMARK_MAX_NEIGHBORS) {
+            break;
+          }
+        }
+
+        if (neighborCount >= SPECTRAL_LANDMARK_MAX_NEIGHBORS) {
+          break;
+        }
+      }
+    });
+  });
+
+  return landmarks;
+}
+
+function extractSpectralPeakBands(frame) {
+  if (!frame?.length) {
+    return [];
+  }
+
+  const candidates = [];
+  frame.forEach((value, index) => {
+    const left = index > 0 ? frame[index - 1] : 0;
+    const right = index + 1 < frame.length ? frame[index + 1] : 0;
+    if (value >= SPECTRAL_LANDMARK_MIN_PEAK && value >= left && value >= right) {
+      candidates.push({ index, value });
+    }
+  });
+
+  if (!candidates.length) {
+    return [...frame]
+      .map((value, index) => ({ index, value }))
+      .sort((left, right) => right.value - left.value)
+      .slice(0, SPECTRAL_LANDMARK_PEAKS_PER_FRAME)
+      .map((item) => item.index);
+  }
+
+  return candidates
+    .sort((left, right) => right.value - left.value)
+    .slice(0, SPECTRAL_LANDMARK_PEAKS_PER_FRAME)
+    .map((item) => item.index);
 }
 
 function goertzelMagnitude(frame, sampleRate, targetFrequency) {
@@ -2511,7 +2620,7 @@ function iterateReferenceVariantFeatures(reference) {
   const segments = Array.isArray(reference.features.strongSegments)
     ? reference.features.strongSegments
     : [];
-  segments.slice(0, 3).forEach((segment) => {
+  segments.slice(0, Math.min(MAX_REFERENCE_SEGMENTS, 5)).forEach((segment) => {
     if (segment?.features) {
       variants.push(segment.features);
     }
@@ -2536,14 +2645,16 @@ function measureReferenceFeatureSimilarity(left, right) {
   );
   const densitySimilarity = clamp(1 - Math.abs((left?.density || 0) - (right?.density || 0)), 0, 1);
   const fingerprintSimilarity = fingerprintHashSimilarity(left?.fingerprints || [], right?.fingerprints || []);
+  const landmarkSimilarity = fingerprintHashSimilarity(left?.spectralLandmarks || [], right?.spectralLandmarks || []);
 
   return clamp(
-    onsetSimilarity * 0.2 +
-    envelopeSimilarity * 0.18 +
-    intervalSimilarity * 0.16 +
-    spectralSimilarity * 0.18 +
-    fluxSimilarity * 0.14 +
+    onsetSimilarity * 0.18 +
+    envelopeSimilarity * 0.16 +
+    intervalSimilarity * 0.15 +
+    spectralSimilarity * 0.16 +
+    fluxSimilarity * 0.12 +
     fingerprintSimilarity * 0.08 +
+    landmarkSimilarity * 0.11 +
     tempoSimilarity * 0.04 +
     densitySimilarity * 0.02,
     0,
@@ -2567,13 +2678,15 @@ function measureFieldReferenceSimilarity(left, right) {
     1,
   );
   const densitySimilarity = clamp(1 - Math.abs((left?.density || 0) - (right?.density || 0)), 0, 1);
+  const landmarkSimilarity = fingerprintHashSimilarity(left?.spectralLandmarks || [], right?.spectralLandmarks || []);
 
   return clamp(
-    onsetSimilarity * 0.22 +
-    envelopeSimilarity * 0.23 +
-    intervalSimilarity * 0.18 +
-    spectralSimilarity * 0.18 +
-    fluxSimilarity * 0.12 +
+    onsetSimilarity * 0.18 +
+    envelopeSimilarity * 0.2 +
+    intervalSimilarity * 0.16 +
+    spectralSimilarity * 0.16 +
+    fluxSimilarity * 0.1 +
+    landmarkSimilarity * 0.13 +
     tempoSimilarity * 0.05 +
     densitySimilarity * 0.02,
     0,
@@ -2766,9 +2879,9 @@ function compareAgainstReferences(inputFeatures, references, modeKey) {
   );
   const scored = readyReferences.map((reference) => {
     const variants = buildReferenceFeatureVariants(reference);
-    return variants
-      .map((variant) => scoreReferenceVariant(inputFeatures, reference, variant, preset, modeKey))
-      .sort((left, right) => compareVariantScores(left, right, modeKey))[0];
+    const scoredVariants = variants
+      .map((variant) => scoreReferenceVariant(inputFeatures, reference, variant, preset, modeKey));
+    return aggregateReferenceVariantScores(scoredVariants, modeKey);
   });
 
   if (modeKey === "field") {
@@ -2785,16 +2898,81 @@ function compareAgainstReferences(inputFeatures, references, modeKey) {
     const separationBoost = modeKey !== "field" && index === 0 && item.evidenceScore >= detectionLimit("minMatchEvidence", modeKey)
       ? Math.max(0, Math.min(8, (second - best) * 36))
       : 0;
-    const confidence = Math.round(clamp(item.signalAdjustedSimilarity * 100 + separationBoost, 0, 98));
-
-    return {
+    const confidenceBase = modeKey === "field"
+      ? item.fieldRankingScore * 0.72 + item.signalAdjustedSimilarity * 0.28
+      : item.signalAdjustedSimilarity;
+    const confidence = Math.round(clamp(confidenceBase * 100 + separationBoost, 0, 98));
+    const match = {
       ...item,
       confidence,
-      displayConfidence: modeKey === "field" ? getVisibleConfidence(item) : confidence,
+    };
+
+    return {
+      ...match,
+      displayConfidence: modeKey === "field" ? getVisibleConfidence(match) : confidence,
     };
   });
-  matches.sort((left, right) => right.confidence - left.confidence || left.distance - right.distance);
+  matches.sort((left, right) => (
+    modeKey === "field"
+      ? right.fieldRankingScore - left.fieldRankingScore ||
+        right.confidence - left.confidence ||
+        left.distance - right.distance
+      : right.confidence - left.confidence || left.distance - right.distance
+  ));
   return matches.slice(0, MATCHES_LIMIT);
+}
+
+function aggregateReferenceVariantScores(scoredVariants, modeKey) {
+  const sorted = [...scoredVariants].sort((left, right) => compareVariantScores(left, right, modeKey));
+  const best = sorted[0];
+  if (!best) {
+    return null;
+  }
+
+  const bestAlignment = getReferenceAlignedSeconds(best);
+  const toleranceSeconds = modeKey === "field" ? 2.5 : 1.8;
+  const bestRanking = modeKey === "field" ? best.fieldRankingScore : best.signalAdjustedSimilarity;
+  const consistentVariants = sorted.filter((item) => {
+    const alignedSeconds = getReferenceAlignedSeconds(item);
+    const ranking = modeKey === "field" ? item.fieldRankingScore : item.signalAdjustedSimilarity;
+    return Math.abs(alignedSeconds - bestAlignment) <= toleranceSeconds &&
+      ranking >= bestRanking - (modeKey === "field" ? 0.08 : 0.05);
+  });
+
+  const supportWeight = consistentVariants.reduce((sum, item, index) => {
+    if (index === 0) {
+      return sum + 1;
+    }
+    const ranking = modeKey === "field" ? item.fieldRankingScore : item.signalAdjustedSimilarity;
+    return sum + Math.max(0.16, Math.min(0.65, ranking / Math.max(0.01, bestRanking))) * 0.55;
+  }, 0);
+  const variantConsensus = clamp((supportWeight - 1) / 1.8, 0, 1);
+  const variantSupportCount = consistentVariants.length;
+  const diagnostics = {
+    ...best.diagnostics,
+    variantConsensus,
+    variantSupportCount,
+  };
+  const aggregateBonus = modeKey === "field"
+    ? variantConsensus * 0.07 + Math.min(0.03, Math.max(0, variantSupportCount - 1) * 0.01)
+    : variantConsensus * 0.03;
+
+  return {
+    ...best,
+    evidenceScore: clamp(best.evidenceScore + aggregateBonus * (modeKey === "field" ? 0.55 : 0.35), 0, 1),
+    signalAdjustedSimilarity: clamp(best.signalAdjustedSimilarity * (1 + aggregateBonus * 0.4), 0, 1),
+    fieldRankingScore: modeKey === "field"
+      ? clamp(best.fieldRankingScore + aggregateBonus, 0, 1)
+      : best.fieldRankingScore,
+    diagnostics,
+  };
+}
+
+function getReferenceAlignedSeconds(item) {
+  const startSeconds = item?.referenceVariant?.startSeconds || 0;
+  const hopSeconds = item?.referenceFeatures?.hopSeconds || item?.alignment?.hopSeconds || 0.023;
+  const offset = item?.alignment?.offset || 0;
+  return startSeconds + offset * hopSeconds;
 }
 
 function compareVariantScores(left, right, modeKey) {
@@ -2862,6 +3040,10 @@ function scoreReferenceVariant(inputFeatures, reference, variant, preset, modeKe
     rhythmMatch.offset,
     rhythmMatch.windowLength,
   );
+  const landmarkMatch = compareSpectralLandmarks(
+    inputFeatures.spectralLandmarks || [],
+    referenceFeatures.spectralLandmarks || [],
+  );
   const fingerprintMatch = compareRhythmFingerprints(
     inputFeatures.fingerprints,
     referenceFeatures.fingerprints,
@@ -2897,6 +3079,7 @@ function scoreReferenceVariant(inputFeatures, reference, variant, preset, modeKe
     rhythmMatch,
     envelopeMatch,
     spectralFluxMatch,
+    landmarkMatch,
     fingerprintMatch,
     intervalDistance,
     densityDistance,
@@ -2982,6 +3165,7 @@ function buildMatchDiagnostics(
   rhythmMatch,
   envelopeMatch,
   spectralFluxMatch,
+  landmarkMatch,
   fingerprintMatch,
   intervalDistance,
   densityDistance,
@@ -2995,10 +3179,17 @@ function buildMatchDiagnostics(
   const densitySimilarity = clamp(1 - densityDistance, 0, 1);
   const spectralSimilarity = clamp(1 - spectralDistance, 0, 1);
   const spectralFluxSimilarity = spectralFluxMatch.similarity;
+  const landmarkSimilarity = landmarkMatch.similarity;
   const tempoSimilarity = clamp(1 - tempoDistance, 0, 1);
   const peaksSimilarity = clamp(1 - peaksDistance, 0, 1);
   const fingerprintStrength = clamp(fingerprintMatch.similarity / 0.35, 0, 1);
-  const timbreScore = clamp(spectralSimilarity * 0.68 + spectralFluxSimilarity * 0.32, 0, 1);
+  const timbreScore = clamp(
+    spectralSimilarity * 0.5 +
+    spectralFluxSimilarity * 0.2 +
+    landmarkSimilarity * 0.3,
+    0,
+    1,
+  );
   const patternScore = clamp(
     slowPatternProfile
       ? rhythmMatch.similarity * 0.23 +
@@ -3021,8 +3212,9 @@ function buildMatchDiagnostics(
     rhythmMatch.similarity * 0.42 +
     envelopeMatch.similarity * 0.24 +
     intervalSimilarity * 0.18 +
-    spectralSimilarity * 0.1 +
-    spectralFluxSimilarity * 0.06,
+    spectralSimilarity * 0.06 +
+    spectralFluxSimilarity * 0.04 +
+    landmarkSimilarity * 0.06,
     0,
     1,
   );
@@ -3044,6 +3236,8 @@ function buildMatchDiagnostics(
     densitySimilarity,
     spectralSimilarity,
     spectralFluxSimilarity,
+    landmarkSimilarity,
+    landmarkVotes: landmarkMatch.votes,
     timbreScore,
     tempoSimilarity,
     peaksSimilarity,
@@ -3089,8 +3283,9 @@ function estimateMatchEvidence(
       rhythmScore * (slowPatternProfile ? 0.09 : 0.11) +
       envelopeScore * (slowPatternProfile ? 0.13 : 0.12) +
       diagnostics.intervalSimilarity * (slowPatternProfile ? 0.12 : 0.1) +
-      diagnostics.spectralSimilarity * 0.08 +
-      diagnostics.spectralFluxSimilarity * 0.06 +
+      diagnostics.spectralSimilarity * 0.06 +
+      diagnostics.spectralFluxSimilarity * 0.04 +
+      diagnostics.landmarkSimilarity * 0.1 +
       diagnostics.segmentConsistency * 0.08 +
       absoluteScore * 0.05 +
       inputFeatures.rhythmicStability * 0.05 +
@@ -3130,8 +3325,9 @@ function isReliableMatch(match, settings) {
     diagnostics.rhythmSimilarity >= (diagnostics.slowPatternProfile ? 0.72 : 0.78) &&
     diagnostics.envelopeSimilarity >= (diagnostics.slowPatternProfile ? 0.82 : 0.78) &&
     diagnostics.intervalSimilarity >= (diagnostics.slowPatternProfile ? 0.7 : 0.62) &&
-    diagnostics.timbreScore >= (diagnostics.slowPatternProfile ? 0.72 : 0.76) &&
-    diagnostics.segmentConsistency >= (diagnostics.slowPatternProfile ? 0.78 : 0.8);
+      diagnostics.timbreScore >= (diagnostics.slowPatternProfile ? 0.72 : 0.76) &&
+    diagnostics.segmentConsistency >= (diagnostics.slowPatternProfile ? 0.78 : 0.8) &&
+    diagnostics.landmarkSimilarity >= (diagnostics.slowPatternProfile ? 0.32 : 0.36);
   const confirmationConfidence = modeKey === "field" && !hasStrongFieldPattern
     ? Math.max(minimumConfidence, diagnostics.slowPatternProfile ? 52 : 55)
     : minimumConfidence;
@@ -3168,7 +3364,8 @@ function getMatchAmbiguity(matches, modeKey = state.settings.analysisMode) {
       diagnostics.envelopeSimilarity >= (diagnostics.slowPatternProfile ? 0.78 : 0.72) &&
       diagnostics.intervalSimilarity >= (diagnostics.slowPatternProfile ? 0.66 : 0.58) &&
       diagnostics.timbreScore >= (diagnostics.slowPatternProfile ? 0.68 : 0.7) &&
-      diagnostics.segmentConsistency >= (diagnostics.slowPatternProfile ? 0.74 : 0.76);
+      diagnostics.segmentConsistency >= (diagnostics.slowPatternProfile ? 0.74 : 0.76) &&
+      diagnostics.landmarkSimilarity >= (diagnostics.slowPatternProfile ? 0.24 : 0.28);
     const candidateIsPlausible =
       candidate.confidence >= minimumPlausibleConfidence &&
       candidate.evidenceScore >= detectionLimit("minMatchEvidence", modeKey) &&
@@ -3186,6 +3383,7 @@ function applyFieldLeadershipBonuses(scored) {
   const maxPattern = Math.max(...scored.map((item) => item.diagnostics?.patternScore || 0));
   const maxEnvelope = Math.max(...scored.map((item) => item.diagnostics?.envelopeSimilarity || 0));
   const maxSpectral = Math.max(...scored.map((item) => item.diagnostics?.spectralSimilarity || 0));
+  const maxLandmark = Math.max(...scored.map((item) => item.diagnostics?.landmarkSimilarity || 0));
   const maxSegmentConsistency = Math.max(...scored.map((item) => item.diagnostics?.segmentConsistency || 0));
 
   scored.forEach((item) => {
@@ -3193,12 +3391,13 @@ function applyFieldLeadershipBonuses(scored) {
     const leadsPattern = diagnostics.patternScore >= Math.max(0.8, maxPattern - 0.015);
     const leadsEnvelope = diagnostics.envelopeSimilarity >= Math.max(0.76, maxEnvelope - 0.02);
     const leadsSpectral = diagnostics.spectralSimilarity >= Math.max(0.74, maxSpectral - 0.02);
+    const leadsLandmark = diagnostics.landmarkSimilarity >= Math.max(0.3, maxLandmark - 0.03);
     const leadsSegmentConsistency =
       diagnostics.segmentConsistency >= Math.max(0.76, maxSegmentConsistency - 0.02);
-    const tripleLead = leadsPattern && leadsEnvelope && leadsSpectral;
-    const segmentLead = leadsPattern && leadsSegmentConsistency;
-    const dualLead = leadsPattern && (leadsEnvelope || leadsSpectral || leadsSegmentConsistency);
-    const bonus = tripleLead ? 0.05 : segmentLead ? 0.04 : dualLead ? 0.022 : 0;
+    const tripleLead = leadsPattern && leadsEnvelope && (leadsSpectral || leadsLandmark);
+    const segmentLead = leadsPattern && leadsSegmentConsistency && leadsLandmark;
+    const dualLead = leadsPattern && (leadsEnvelope || leadsSpectral || leadsSegmentConsistency || leadsLandmark);
+    const bonus = tripleLead ? 0.05 : segmentLead ? 0.042 : dualLead ? 0.022 : 0;
     diagnostics.fieldLeadershipBonus = bonus;
     item.fieldRankingScore = clamp(item.fieldRankingScore + bonus, 0, 1);
   });
@@ -3292,6 +3491,60 @@ function compareRhythmFingerprints(queryFingerprints, targetFingerprints) {
   return {
     similarity: clamp(coverage * 0.45 + coherence * 0.25 + voteStrength * 0.3, 0, 1),
     offsetSeconds: bestOffsetKey * FINGERPRINT_OFFSET_STEP,
+    votes: bestVotes,
+  };
+}
+
+function compareSpectralLandmarks(queryLandmarks, targetLandmarks) {
+  if (!queryLandmarks?.length || !targetLandmarks?.length) {
+    return { similarity: 0, offsetSeconds: 0, votes: 0 };
+  }
+
+  const targetByHash = new Map();
+  for (const landmark of targetLandmarks) {
+    const matches = targetByHash.get(landmark.hash) || [];
+    matches.push(landmark.time);
+    targetByHash.set(landmark.hash, matches);
+  }
+
+  const offsetVotes = new Map();
+  let sharedHashes = 0;
+  let votes = 0;
+
+  for (const landmark of queryLandmarks) {
+    const targetTimes = targetByHash.get(landmark.hash);
+    if (!targetTimes) {
+      continue;
+    }
+
+    sharedHashes += 1;
+    for (const targetTime of targetTimes) {
+      const offsetKey = Math.round((targetTime - landmark.time) / CAPTURE_FRAME_SECONDS);
+      offsetVotes.set(offsetKey, (offsetVotes.get(offsetKey) || 0) + 1);
+      votes += 1;
+    }
+  }
+
+  if (!offsetVotes.size) {
+    return { similarity: 0, offsetSeconds: 0, votes: 0 };
+  }
+
+  let bestOffsetKey = 0;
+  let bestVotes = 0;
+  for (const [offsetKey, count] of offsetVotes.entries()) {
+    if (count > bestVotes) {
+      bestOffsetKey = offsetKey;
+      bestVotes = count;
+    }
+  }
+
+  const coverage = sharedHashes / Math.max(1, queryLandmarks.length);
+  const coherence = bestVotes / Math.max(1, votes);
+  const voteStrength = clamp(bestVotes / Math.max(2, queryLandmarks.length * 0.4), 0, 1);
+
+  return {
+    similarity: clamp(coverage * 0.38 + coherence * 0.24 + voteStrength * 0.38, 0, 1),
+    offsetSeconds: bestOffsetKey * CAPTURE_FRAME_SECONDS,
     votes: bestVotes,
   };
 }

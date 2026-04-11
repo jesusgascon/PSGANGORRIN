@@ -28,10 +28,15 @@ FINGERPRINT_MAX_NEIGHBORS = 5
 FINGERPRINT_MAX_INTERVAL_SECONDS = 3.2
 FINGERPRINT_INTERVAL_STEP = 0.05
 FEATURE_SAMPLE_RATE = 22050
-FEATURE_SCHEMA_VERSION = 4
+FEATURE_SCHEMA_VERSION = 5
 REFERENCE_SEGMENT_SECONDS = (8, 10, 12)
 MAX_REFERENCE_SEGMENTS = 8
 SPECTRAL_BAND_FREQUENCIES = (90, 140, 220, 320, 450, 650, 900, 1300)
+REFERENCE_SEGMENT_STRIDE_SECONDS = 2.5
+SPECTRAL_LANDMARK_PEAKS_PER_FRAME = 2
+SPECTRAL_LANDMARK_MIN_PEAK = 0.18
+SPECTRAL_LANDMARK_LOOKAHEAD_FRAMES = 8
+SPECTRAL_LANDMARK_MAX_NEIGHBORS = 4
 REQUIRED_FEATURE_KEYS = {
     "schemaVersion",
     "fingerprintsCount",
@@ -42,6 +47,8 @@ REQUIRED_FEATURE_KEYS = {
     "spectralProfile",
     "spectralFlux",
     "spectralFluxSeries",
+    "spectralLandmarks",
+    "spectralLandmarksCount",
     "strongSegments",
 }
 
@@ -271,7 +278,7 @@ def analyse_samples(samples: array, sample_rate: int, include_segments: bool = T
     onset_profile = measure_onset_profile(onset, peak_indexes)
     rhythmic_stability = estimate_rhythmic_stability(peak_times)
     fingerprints = build_rhythm_fingerprints(peak_times)
-    spectral_profile, spectral_flux_series = build_spectral_signature(samples, sample_rate)
+    spectral_profile, spectral_flux_series, spectral_landmarks = build_spectral_signature(samples, sample_rate)
 
     features = {
         "schemaVersion": FEATURE_SCHEMA_VERSION,
@@ -307,6 +314,8 @@ def analyse_samples(samples: array, sample_rate: int, include_segments: bool = T
         "spectralProfile": round_values(spectral_profile),
         "spectralFlux": round_values(resample_vector(spectral_flux_series, ENVELOPE_BINS)),
         "spectralFluxSeries": round_values(spectral_flux_series),
+        "spectralLandmarks": spectral_landmarks,
+        "spectralLandmarksCount": len(spectral_landmarks),
     }
     if include_segments:
         features["strongSegments"] = build_strong_segments(samples, sample_rate)
@@ -324,6 +333,7 @@ def build_strong_segments(samples: array, sample_rate: int) -> list[dict]:
     frames = measure_energy_frames(samples, sample_rate)
     centers = find_strong_segment_centers(frames)
     centers.extend(find_distributed_segment_centers(samples, sample_rate))
+    centers.extend(find_dense_segment_centers(duration_seconds))
     segments = []
     seen = set()
 
@@ -370,6 +380,19 @@ def build_strong_segments(samples: array, sample_rate: int) -> list[dict]:
             break
 
     return selected
+
+
+def find_dense_segment_centers(duration_seconds: float) -> list[float]:
+    if duration_seconds <= min(REFERENCE_SEGMENT_SECONDS) + 1:
+        return []
+
+    centers = []
+    cursor = min(REFERENCE_SEGMENT_SECONDS) / 2
+    limit = max(cursor, duration_seconds - min(REFERENCE_SEGMENT_SECONDS) / 2)
+    while cursor <= limit:
+        centers.append(round(cursor, 3))
+        cursor += REFERENCE_SEGMENT_STRIDE_SECONDS
+    return centers
 
 
 def measure_energy_frames(samples: array, sample_rate: int) -> list[dict]:
@@ -489,10 +512,10 @@ def build_interval_profile(peak_indexes: list[int], sample_rate: int) -> list[fl
     return normalize_array(histogram)
 
 
-def build_spectral_signature(samples: array, sample_rate: int) -> tuple[list[float], list[float]]:
+def build_spectral_signature(samples: array, sample_rate: int) -> tuple[list[float], list[float], list[dict]]:
     if len(samples) < ANALYSIS_WINDOW:
         size = len(SPECTRAL_BAND_FREQUENCIES)
-        return [0.0] * size, [0.0] * ENVELOPE_BINS
+        return [0.0] * size, [0.0] * ENVELOPE_BINS, []
 
     hop = ANALYSIS_WINDOW // 2
     scale = 32768
@@ -516,13 +539,69 @@ def build_spectral_signature(samples: array, sample_rate: int) -> tuple[list[flo
 
     if not band_frames:
         size = len(SPECTRAL_BAND_FREQUENCIES)
-        return [0.0] * size, [0.0] * ENVELOPE_BINS
+        return [0.0] * size, [0.0] * ENVELOPE_BINS, []
 
     profile = []
     for band_index in range(len(SPECTRAL_BAND_FREQUENCIES)):
         profile.append(sum(frame[band_index] for frame in band_frames) / len(band_frames))
 
-    return normalize_array(profile), smooth_vector(normalize_array(flux_values), 2)
+    hop_seconds = hop / sample_rate
+    return (
+        normalize_array(profile),
+        smooth_vector(normalize_array(flux_values), 2),
+        build_spectral_landmarks(band_frames, hop_seconds),
+    )
+
+
+def build_spectral_landmarks(band_frames: list[list[float]], hop_seconds: float) -> list[dict]:
+    if not band_frames:
+        return []
+
+    frame_peaks = [extract_spectral_peak_bands(frame) for frame in band_frames]
+    landmarks = []
+    for anchor_frame, anchor_bands in enumerate(frame_peaks):
+        if not anchor_bands:
+            continue
+
+        for anchor_band in anchor_bands:
+            neighbor_count = 0
+            max_target_frame = min(len(frame_peaks) - 1, anchor_frame + SPECTRAL_LANDMARK_LOOKAHEAD_FRAMES)
+            for target_frame in range(anchor_frame + 1, max_target_frame + 1):
+                target_bands = frame_peaks[target_frame]
+                if not target_bands:
+                    continue
+                delta_frames = target_frame - anchor_frame
+                for target_band in target_bands:
+                    landmarks.append(
+                        {
+                            "hash": f"{anchor_band}:{target_band}:{delta_frames}",
+                            "time": round(anchor_frame * hop_seconds, 3),
+                        }
+                    )
+                    neighbor_count += 1
+                    if neighbor_count >= SPECTRAL_LANDMARK_MAX_NEIGHBORS:
+                        break
+                if neighbor_count >= SPECTRAL_LANDMARK_MAX_NEIGHBORS:
+                    break
+
+    return landmarks
+
+
+def extract_spectral_peak_bands(frame: list[float]) -> list[int]:
+    if not frame:
+        return []
+
+    candidates = []
+    for index, value in enumerate(frame):
+        left = frame[index - 1] if index > 0 else 0.0
+        right = frame[index + 1] if index + 1 < len(frame) else 0.0
+        if value >= SPECTRAL_LANDMARK_MIN_PEAK and value >= left and value >= right:
+            candidates.append((index, value))
+
+    if not candidates:
+        candidates = sorted(enumerate(frame), key=lambda item: item[1], reverse=True)
+
+    return [index for index, _value in candidates[:SPECTRAL_LANDMARK_PEAKS_PER_FRAME]]
 
 
 def goertzel_magnitude(frame: list[float], sample_rate: int, target_frequency: float) -> float:
@@ -741,7 +820,7 @@ def iter_reference_variant_features(reference: dict) -> list[dict]:
 
     variants = [features]
     segments = features.get("strongSegments") or []
-    for segment in segments[:3]:
+    for segment in segments[: min(MAX_REFERENCE_SEGMENTS, 5)]:
         if isinstance(segment, dict) and isinstance(segment.get("features"), dict):
             variants.append(segment["features"])
     return variants
@@ -775,14 +854,19 @@ def measure_reference_similarity(left: dict, right: dict) -> float:
         left.get("fingerprints", []) or [],
         right.get("fingerprints", []) or [],
     )
+    landmark_similarity = fingerprint_hash_similarity(
+        left.get("spectralLandmarks", []) or [],
+        right.get("spectralLandmarks", []) or [],
+    )
 
     return clamp(
-        onset_similarity * 0.2
-        + envelope_similarity * 0.18
-        + interval_similarity * 0.16
-        + spectral_similarity * 0.18
-        + flux_similarity * 0.14
+        onset_similarity * 0.18
+        + envelope_similarity * 0.16
+        + interval_similarity * 0.15
+        + spectral_similarity * 0.16
+        + flux_similarity * 0.12
         + fingerprint_similarity * 0.08
+        + landmark_similarity * 0.11
         + tempo_similarity * 0.04
         + density_similarity * 0.02,
         0.0,
@@ -814,13 +898,18 @@ def measure_field_reference_similarity(left: dict, right: dict) -> float:
         0.0,
         1.0,
     )
+    landmark_similarity = fingerprint_hash_similarity(
+        left.get("spectralLandmarks", []) or [],
+        right.get("spectralLandmarks", []) or [],
+    )
 
     return clamp(
-        onset_similarity * 0.22
-        + envelope_similarity * 0.23
-        + interval_similarity * 0.18
-        + spectral_similarity * 0.18
-        + flux_similarity * 0.12
+        onset_similarity * 0.18
+        + envelope_similarity * 0.2
+        + interval_similarity * 0.16
+        + spectral_similarity * 0.16
+        + flux_similarity * 0.1
+        + landmark_similarity * 0.13
         + tempo_similarity * 0.05
         + density_similarity * 0.02,
         0.0,

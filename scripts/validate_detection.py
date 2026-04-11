@@ -13,7 +13,12 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from calibrate_detection import write_calibration_files  # noqa: E402
-from library_manifest import write_library_files  # noqa: E402
+from library_manifest import (  # noqa: E402
+    FEATURE_SCHEMA_VERSION,
+    enrich_reference_segments,
+    has_required_features,
+    write_library_files,
+)
 
 
 ANALYSIS_WINDOW = 2048
@@ -21,6 +26,7 @@ FINGERPRINT_MAX_NEIGHBORS = 5
 FINGERPRINT_MAX_INTERVAL_SECONDS = 3.2
 FINGERPRINT_INTERVAL_STEP = 0.05
 FINGERPRINT_OFFSET_STEP = 0.25
+CAPTURE_FRAME_SECONDS = 0.12
 SUBSEQUENCE_STRIDE_DIVISOR = 18
 MATCHES_LIMIT = 4
 
@@ -227,15 +233,26 @@ def main() -> None:
 
 def load_references(project_root: Path) -> list[dict]:
     features_path = project_root / "assets" / "pasos" / "features.json"
+    if not features_path.exists():
+        write_library_files(project_root)
+
     payload = json.loads(features_path.read_text(encoding="utf-8"))
     references = [
         reference
         for reference in payload.get("references", [])
         if isinstance(reference.get("features"), dict)
     ]
+    if any(not has_required_features(reference.get("features")) for reference in references):
+        write_library_files(project_root)
+        payload = json.loads(features_path.read_text(encoding="utf-8"))
+        references = [
+            reference
+            for reference in payload.get("references", [])
+            if isinstance(reference.get("features"), dict)
+        ]
     if not references:
         raise SystemExit("No hay referencias con features para validar.")
-    return references
+    return enrich_reference_segments(references)
 
 
 def load_limits(project_root: Path) -> dict:
@@ -418,6 +435,14 @@ def build_capture_from_reference(
         for time in features.get("peakTimes", [])
         if start * hop_seconds <= float(time) < end * hop_seconds
     ]
+    spectral_landmarks = [
+        {
+            **landmark,
+            "time": round(float(landmark["time"]) - start * hop_seconds, 3),
+        }
+        for landmark in features.get("spectralLandmarks", [])
+        if start * hop_seconds <= float(landmark.get("time", 0.0)) < end * hop_seconds
+    ]
     peak_indexes = [round(time / hop_seconds) for time in peak_times]
     duration = max(seconds, len(onset) * hop_seconds)
     peak_rate = len(peak_times) / max(0.1, duration)
@@ -450,6 +475,8 @@ def build_capture_from_reference(
         "spectralProfile": list(features.get("spectralProfile") or []),
         "spectralFlux": resample_vector(spectral_flux, 96),
         "spectralFluxSeries": spectral_flux,
+        "spectralLandmarks": spectral_landmarks,
+        "spectralLandmarksCount": len(spectral_landmarks),
         "signalQuality": estimate_signal_quality(
             stats,
             len(peak_indexes),
@@ -542,22 +569,18 @@ def compare_against_references(
 
     for reference in references:
         variants = build_reference_feature_variants(reference)
-        scored.append(
-            sorted(
-                (
-                    score_reference_variant(
-                        input_features,
-                        reference,
-                        variant,
-                        weights,
-                        limits,
-                        mode_key,
-                    )
-                    for variant in variants
-                ),
-                key=lambda item: variant_sort_key(item, mode_key),
-            )[0]
-        )
+        scored_variants = [
+            score_reference_variant(
+                input_features,
+                reference,
+                variant,
+                weights,
+                limits,
+                mode_key,
+            )
+            for variant in variants
+        ]
+        scored.append(aggregate_reference_variant_scores(scored_variants, mode_key))
 
     if mode_key == "field":
         apply_field_leadership_bonuses(scored)
@@ -583,9 +606,22 @@ def compare_against_references(
             and item["evidenceScore"] >= limit_for(limits, "minMatchEvidence", mode_key)
             else 0
         )
-        item["confidence"] = round(clamp(item["signalAdjustedSimilarity"] * 100 + separation_boost, 0, 98))
+        confidence_base = (
+            item["fieldRankingScore"] * 0.72 + item["signalAdjustedSimilarity"] * 0.28
+            if mode_key == "field"
+            else item["signalAdjustedSimilarity"]
+        )
+        item["confidence"] = round(clamp(confidence_base * 100 + separation_boost, 0, 98))
         matches.append(item)
-    matches.sort(key=lambda item: (-item["confidence"], item["distance"]))
+    matches.sort(
+        key=lambda item: (
+            -item.get("fieldRankingScore", 0),
+            -item["confidence"],
+            item["distance"],
+        )
+        if mode_key == "field"
+        else (-item["confidence"], item["distance"])
+    )
     return matches[:MATCHES_LIMIT]
 
 
@@ -601,6 +637,59 @@ def variant_sort_key(item: dict, mode_key: str) -> tuple:
             item["distance"],
         )
     return (item["distance"],)
+
+
+def aggregate_reference_variant_scores(scored_variants: list[dict], mode_key: str) -> dict:
+    sorted_variants = sorted(scored_variants, key=lambda item: variant_sort_key(item, mode_key))
+    best = sorted_variants[0]
+    best_alignment = get_reference_aligned_seconds(best)
+    tolerance_seconds = 2.5 if mode_key == "field" else 1.8
+    best_ranking = best["fieldRankingScore"] if mode_key == "field" else best["signalAdjustedSimilarity"]
+    consistent_variants = [
+        item
+        for item in sorted_variants
+        if abs(get_reference_aligned_seconds(item) - best_alignment) <= tolerance_seconds
+        and (item["fieldRankingScore"] if mode_key == "field" else item["signalAdjustedSimilarity"])
+        >= best_ranking - (0.08 if mode_key == "field" else 0.05)
+    ]
+
+    support_weight = 0.0
+    for index, item in enumerate(consistent_variants):
+        if index == 0:
+            support_weight += 1
+            continue
+        ranking = item["fieldRankingScore"] if mode_key == "field" else item["signalAdjustedSimilarity"]
+        support_weight += max(0.16, min(0.65, ranking / max(0.01, best_ranking))) * 0.55
+
+    variant_consensus = clamp((support_weight - 1) / 1.8, 0, 1)
+    variant_support_count = len(consistent_variants)
+    aggregate_bonus = (
+        variant_consensus * 0.07 + min(0.03, max(0, variant_support_count - 1) * 0.01)
+        if mode_key == "field"
+        else variant_consensus * 0.03
+    )
+    diagnostics = {
+        **best.get("diagnostics", {}),
+        "variantConsensus": variant_consensus,
+        "variantSupportCount": variant_support_count,
+    }
+
+    return {
+        **best,
+        "evidenceScore": clamp(best["evidenceScore"] + aggregate_bonus * (0.55 if mode_key == "field" else 0.35), 0, 1),
+        "signalAdjustedSimilarity": clamp(best["signalAdjustedSimilarity"] * (1 + aggregate_bonus * 0.4), 0, 1),
+        "fieldRankingScore": clamp(best["fieldRankingScore"] + aggregate_bonus, 0, 1)
+        if mode_key == "field"
+        else best["fieldRankingScore"],
+        "diagnostics": diagnostics,
+    }
+
+
+def get_reference_aligned_seconds(item: dict) -> float:
+    start_seconds = float(item.get("referenceVariant", {}).get("startSeconds", 0) or 0)
+    hop_seconds = float(item.get("referenceFeatures", {}).get("hopSeconds") or 0.023)
+    offset = float(item.get("alignment", {}).get("offset", 0) or 0)
+    return start_seconds + offset * hop_seconds
 
 
 def build_reference_feature_variants(reference: dict) -> list[dict]:
@@ -667,6 +756,10 @@ def score_reference_variant(
         rhythm_match["offset"],
         rhythm_match["windowLength"],
     )
+    landmark_match = compare_spectral_landmarks(
+        input_features.get("spectralLandmarks", []),
+        reference_features.get("spectralLandmarks", []),
+    )
     spectral_distance = vector_distance(
         input_features.get("spectralProfile", []),
         reference_features.get("spectralProfile", []),
@@ -695,6 +788,7 @@ def score_reference_variant(
         rhythm_match,
         envelope_match,
         spectral_flux_match,
+        landmark_match,
         fingerprint_match,
         interval_distance,
         density_distance,
@@ -787,6 +881,7 @@ def build_match_diagnostics(
     rhythm_match: dict,
     envelope_match: dict,
     spectral_flux_match: dict,
+    landmark_match: dict,
     fingerprint_match: dict,
     interval_distance: float,
     density_distance: float,
@@ -800,10 +895,11 @@ def build_match_diagnostics(
     density_similarity = clamp(1 - density_distance, 0, 1)
     spectral_similarity = clamp(1 - spectral_distance, 0, 1)
     flux_similarity = spectral_flux_match["similarity"]
+    landmark_similarity = landmark_match["similarity"]
     tempo_similarity = clamp(1 - tempo_distance, 0, 1)
     peaks_similarity = clamp(1 - peaks_distance, 0, 1)
     fingerprint_strength = clamp(fingerprint_match["similarity"] / 0.35, 0, 1)
-    timbre_score = clamp(spectral_similarity * 0.68 + flux_similarity * 0.32, 0, 1)
+    timbre_score = clamp(spectral_similarity * 0.5 + flux_similarity * 0.2 + landmark_similarity * 0.3, 0, 1)
     pattern_score = clamp(
         rhythm_match["similarity"] * (0.23 if slow_pattern_profile else 0.29)
         + envelope_match["similarity"] * (0.27 if slow_pattern_profile else 0.23)
@@ -819,8 +915,9 @@ def build_match_diagnostics(
         rhythm_match["similarity"] * 0.42
         + envelope_match["similarity"] * 0.24
         + interval_similarity * 0.18
-        + spectral_similarity * 0.10
-        + flux_similarity * 0.06,
+        + spectral_similarity * 0.06
+        + flux_similarity * 0.04
+        + landmark_similarity * 0.06,
         0,
         1,
     )
@@ -843,6 +940,8 @@ def build_match_diagnostics(
         "densitySimilarity": density_similarity,
         "spectralSimilarity": spectral_similarity,
         "spectralFluxSimilarity": flux_similarity,
+        "landmarkSimilarity": landmark_similarity,
+        "landmarkVotes": landmark_match["votes"],
         "timbreScore": timbre_score,
         "tempoSimilarity": tempo_similarity,
         "peaksSimilarity": peaks_similarity,
@@ -892,8 +991,9 @@ def estimate_match_evidence(
             + rhythm_score * (0.09 if slow_pattern_profile else 0.11)
             + envelope_score * (0.13 if slow_pattern_profile else 0.12)
             + diagnostics["intervalSimilarity"] * (0.12 if slow_pattern_profile else 0.10)
-            + diagnostics["spectralSimilarity"] * 0.08
-            + diagnostics["spectralFluxSimilarity"] * 0.06
+            + diagnostics["spectralSimilarity"] * 0.06
+            + diagnostics["spectralFluxSimilarity"] * 0.04
+            + diagnostics["landmarkSimilarity"] * 0.10
             + diagnostics["segmentConsistency"] * 0.08
             + absolute_score * 0.05
             + input_features["rhythmicStability"] * 0.05
@@ -937,6 +1037,7 @@ def is_reliable_match(match: dict, limits: dict, minimum_confidence: float, mode
         and diagnostics.get("intervalSimilarity", 0) >= (0.70 if diagnostics.get("slowPatternProfile", False) else 0.62)
         and diagnostics.get("timbreScore", 0) >= (0.72 if diagnostics.get("slowPatternProfile", False) else 0.76)
         and diagnostics.get("segmentConsistency", 0) >= (0.78 if diagnostics.get("slowPatternProfile", False) else 0.80)
+        and diagnostics.get("landmarkSimilarity", 0) >= (0.32 if diagnostics.get("slowPatternProfile", False) else 0.36)
     )
     confirmation_confidence = (
         max(minimum_confirmation, 52 if diagnostics.get("slowPatternProfile", False) else 55)
@@ -981,6 +1082,7 @@ def get_match_ambiguity(
             and diagnostics.get("intervalSimilarity", 0) >= (0.66 if diagnostics.get("slowPatternProfile", False) else 0.58)
             and diagnostics.get("timbreScore", 0) >= (0.68 if diagnostics.get("slowPatternProfile", False) else 0.7)
             and diagnostics.get("segmentConsistency", 0) >= (0.74 if diagnostics.get("slowPatternProfile", False) else 0.76)
+            and diagnostics.get("landmarkSimilarity", 0) >= (0.24 if diagnostics.get("slowPatternProfile", False) else 0.28)
         )
         candidate_is_plausible = (
             candidate["confidence"] >= minimum_plausible_confidence
@@ -999,6 +1101,7 @@ def apply_field_leadership_bonuses(scored: list[dict]) -> None:
     max_pattern = max(item.get("diagnostics", {}).get("patternScore", 0) for item in scored)
     max_envelope = max(item.get("diagnostics", {}).get("envelopeSimilarity", 0) for item in scored)
     max_spectral = max(item.get("diagnostics", {}).get("spectralSimilarity", 0) for item in scored)
+    max_landmark = max(item.get("diagnostics", {}).get("landmarkSimilarity", 0) for item in scored)
     max_segment_consistency = max(item.get("diagnostics", {}).get("segmentConsistency", 0) for item in scored)
 
     for item in scored:
@@ -1006,11 +1109,12 @@ def apply_field_leadership_bonuses(scored: list[dict]) -> None:
         leads_pattern = diagnostics.get("patternScore", 0) >= max(0.80, max_pattern - 0.015)
         leads_envelope = diagnostics.get("envelopeSimilarity", 0) >= max(0.76, max_envelope - 0.02)
         leads_spectral = diagnostics.get("spectralSimilarity", 0) >= max(0.74, max_spectral - 0.02)
+        leads_landmark = diagnostics.get("landmarkSimilarity", 0) >= max(0.30, max_landmark - 0.03)
         leads_segment_consistency = diagnostics.get("segmentConsistency", 0) >= max(0.76, max_segment_consistency - 0.02)
-        triple_lead = leads_pattern and leads_envelope and leads_spectral
-        segment_lead = leads_pattern and leads_segment_consistency
-        dual_lead = leads_pattern and (leads_envelope or leads_spectral or leads_segment_consistency)
-        bonus = 0.05 if triple_lead else 0.04 if segment_lead else 0.022 if dual_lead else 0
+        triple_lead = leads_pattern and leads_envelope and (leads_spectral or leads_landmark)
+        segment_lead = leads_pattern and leads_segment_consistency and leads_landmark
+        dual_lead = leads_pattern and (leads_envelope or leads_spectral or leads_segment_consistency or leads_landmark)
+        bonus = 0.05 if triple_lead else 0.042 if segment_lead else 0.022 if dual_lead else 0
         diagnostics["fieldLeadershipBonus"] = bonus
         item["fieldRankingScore"] = clamp(item.get("fieldRankingScore", 0) + bonus, 0, 1)
 
@@ -1055,6 +1159,41 @@ def compare_rhythm_fingerprints(query_fingerprints: list[dict], target_fingerpri
     return {
         "similarity": clamp(coverage * 0.45 + coherence * 0.25 + vote_strength * 0.3, 0, 1),
         "offsetSeconds": best_offset_key * FINGERPRINT_OFFSET_STEP,
+        "votes": best_votes,
+    }
+
+
+def compare_spectral_landmarks(query_landmarks: list[dict], target_landmarks: list[dict]) -> dict:
+    if not query_landmarks or not target_landmarks:
+        return {"similarity": 0, "offsetSeconds": 0, "votes": 0}
+
+    target_by_hash = {}
+    for landmark in target_landmarks:
+        target_by_hash.setdefault(landmark["hash"], []).append(float(landmark["time"]))
+
+    offset_votes = {}
+    shared_hashes = 0
+    votes = 0
+    for landmark in query_landmarks:
+        target_times = target_by_hash.get(landmark["hash"])
+        if not target_times:
+            continue
+        shared_hashes += 1
+        for target_time in target_times:
+            offset_key = round((target_time - float(landmark["time"])) / CAPTURE_FRAME_SECONDS)
+            offset_votes[offset_key] = offset_votes.get(offset_key, 0) + 1
+            votes += 1
+
+    if not offset_votes:
+        return {"similarity": 0, "offsetSeconds": 0, "votes": 0}
+
+    best_offset_key, best_votes = max(offset_votes.items(), key=lambda item: item[1])
+    coverage = shared_hashes / max(1, len(query_landmarks))
+    coherence = best_votes / max(1, votes)
+    vote_strength = clamp(best_votes / max(2, len(query_landmarks) * 0.4), 0, 1)
+    return {
+        "similarity": clamp(coverage * 0.38 + coherence * 0.24 + vote_strength * 0.38, 0, 1),
+        "offsetSeconds": best_offset_key * CAPTURE_FRAME_SECONDS,
         "votes": best_votes,
     }
 

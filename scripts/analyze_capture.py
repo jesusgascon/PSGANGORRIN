@@ -114,11 +114,13 @@ def print_capture_result(capture_path: Path, references: list[dict], limits: dic
             f"- votos {alignment.get('fingerprintVotes', 0)} "
             f"- patron {diagnostics.get('patternScore', 0):.3f} "
             f"- timbre {diagnostics.get('timbreScore', 0):.3f} "
+            f"- landmarks {diagnostics.get('landmarkSimilarity', 0):.3f} "
             f"- ritmo {diagnostics.get('rhythmSimilarity', 0):.3f} "
             f"- envolvente {diagnostics.get('envelopeSimilarity', 0):.3f} "
             f"- intervalos {diagnostics.get('intervalSimilarity', 0):.3f} "
             f"- espectro {diagnostics.get('spectralSimilarity', 0):.3f} "
             f"- flujo {diagnostics.get('spectralFluxSimilarity', 0):.3f} "
+            f"- consenso {diagnostics.get('variantConsensus', 0):.3f} "
             f"- dominio {diagnostics.get('patternDominance', 0):.3f} "
             f"- bonus {diagnostics.get('fieldLeadershipBonus', 0):.3f} "
             f"- perfil {'lento' if diagnostics.get('slowPatternProfile') else 'normal'} "
@@ -338,15 +340,19 @@ def score_candidate(
         if mode_key == "field":
             match_score = (
                 best["confidence"] * 0.34
+                + best.get("fieldRankingScore", 0) * 24
                 + best["evidenceScore"] * 30
                 + best["absoluteSimilarity"] * 13
                 + diagnostics.get("patternScore", 0) * 21
                 + diagnostics.get("timbreScore", 0) * 19
+                + diagnostics.get("landmarkSimilarity", 0) * 10
+                + diagnostics.get("segmentConsistency", 0) * 12
                 + diagnostics.get("rhythmSimilarity", 0) * 8
                 + diagnostics.get("envelopeSimilarity", 0) * 8
                 + diagnostics.get("spectralSimilarity", 0) * 8
                 + diagnostics.get("spectralFluxSimilarity", 0) * 7
                 + diagnostics.get("fieldLeadershipBonus", 0) * 18
+                + diagnostics.get("variantConsensus", 0) * 12
                 + min(2.2, votes * 0.11)
             )
         else:
