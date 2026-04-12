@@ -851,6 +851,23 @@ h3 {
   font-weight: 800;
   letter-spacing: 0.05em;
   text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.hero-highlight:hover,
+.hero-highlight:focus-visible {
+  background: rgba(255, 255, 255, 0.085);
+  border-color: rgba(216, 170, 79, 0.24);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14);
+}
+
+.hero-highlight:active {
+  transform: translateY(1px);
 }
 
 .hero-highlight::before {
@@ -1405,6 +1422,7 @@ input:disabled {
   display: grid;
   justify-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .result-seal {
@@ -1446,13 +1464,14 @@ input:disabled {
 }
 
 .match-name {
-  max-width: 14ch;
+  max-width: min(100%, 14ch);
   color: var(--wax);
   font-size: clamp(1.75rem, 9vw, 2.65rem);
   font-weight: 800;
-  line-height: 0.98;
+  line-height: 1.02;
   margin-bottom: 2px;
   text-wrap: balance;
+  overflow-wrap: anywhere;
   text-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
 }
 
@@ -3883,12 +3902,14 @@ code {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 140px;
     align-items: center;
+    column-gap: 24px;
     text-align: left;
   }
 
   .result-main {
     justify-items: start;
     text-align: left;
+    min-width: 0;
   }
 
   .section-head > div {
@@ -3906,7 +3927,7 @@ code {
   }
 
   .match-name {
-    max-width: 18ch;
+    max-width: min(100%, 18ch);
   }
 
   .upload-button {

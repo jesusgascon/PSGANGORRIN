@@ -445,6 +445,7 @@ function bindEvents() {
   elements.localHelpButton?.addEventListener("click", showLocalHelp);
   elements.userBottomNav?.addEventListener("click", handleBottomNav);
   elements.adminBottomNav?.addEventListener("click", handleBottomNav);
+  elements.detectSection?.addEventListener("click", handleHeroHighlightAction);
   elements.adminLoginForm?.addEventListener("submit", handleAdminLoginSubmit);
   elements.adminLoginCancelButton?.addEventListener("click", closeAdminLoginModal);
   elements.adminLoginCloseButton?.addEventListener("click", closeAdminLoginModal);
@@ -5318,6 +5319,33 @@ function handleBottomNav(event) {
   const targetSection = map[target];
   scrollToSection(targetSection);
   flashSection(targetSection);
+}
+
+async function handleHeroHighlightAction(event) {
+  const button = event.target.closest("[data-hero-action]");
+  if (!button) {
+    return;
+  }
+
+  const action = button.dataset.heroAction;
+  if (action === "listen") {
+    updateBottomNavState("listen");
+    scrollToSection(elements.detectSection, { center: true });
+    flashSection(elements.detectSection);
+    window.setTimeout(() => elements.listenButton?.focus(), 120);
+    return;
+  }
+
+  if (action === "history") {
+    updateBottomNavState("history");
+    scrollToSection(elements.historySection);
+    flashSection(elements.historySection);
+    return;
+  }
+
+  if (action === "admin") {
+    await toggleMode();
+  }
 }
 
 function openAdminPanel(panel, { focusSearch = false } = {}) {
