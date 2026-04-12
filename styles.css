@@ -312,8 +312,9 @@ body::after {
 .analysis-title {
   margin: 0;
   font-size: 1.55rem;
-  max-width: 14ch;
+  max-width: 18ch;
   text-wrap: balance;
+  line-height: 1.12;
 }
 
 .analysis-meta,
@@ -3704,7 +3705,7 @@ code {
   .startup-title,
   .analysis-title {
     font-size: 1.22rem;
-    max-width: 11ch;
+    max-width: 12ch;
   }
 
   .startup-meta,
