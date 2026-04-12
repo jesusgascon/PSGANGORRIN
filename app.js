@@ -52,6 +52,63 @@ const FINGERPRINT_OFFSET_STEP = 0.25;
 const APP_RELEASE = "v1.2.0";
 const APP_LICENSE = "MIT";
 const APP_RELEASE_URL = `https://github.com/jesusgascon/PSGANGORRIN/releases/tag/${APP_RELEASE}`;
+const PROJECT_INFO_CONTENT = Object.freeze({
+  release: {
+    kicker: "Release estable",
+    title: `CofraBeat ${APP_RELEASE}`,
+    hero: "Versión estable para uso real",
+    summary:
+      "Base actual validada para Micro real, con overlays de carga, análisis más fluido y una experiencia de usuario ya estabilizada.",
+    body: [
+      {
+        heading: "Incluye",
+        items: [
+          "Detector field alineado entre web y CLI.",
+          "Historial filtrable por estado, periodo y búsqueda.",
+          "Acciones rápidas para repetir escucha o ampliarla hasta 30 s.",
+          "Bloqueo de la interfaz durante escucha y análisis.",
+        ],
+      },
+      {
+        heading: "Estado",
+        items: [
+          "20 capturas confirmadas.",
+          "3 no confirmadas.",
+          "1 ambigua.",
+          "0 fallos reales en la tanda consolidada.",
+        ],
+      },
+    ],
+    linkLabel: "Ver release en GitHub",
+    linkHref: APP_RELEASE_URL,
+  },
+  license: {
+    kicker: "Licencia libre",
+    title: `Licencia ${APP_LICENSE}`,
+    hero: "Código abierto y reutilizable",
+    summary:
+      "El código del proyecto se distribuye bajo licencia MIT. Puedes usarlo, modificarlo y redistribuirlo manteniendo el aviso de copyright y licencia.",
+    body: [
+      {
+        heading: "Permite",
+        items: [
+          "Uso privado y comercial.",
+          "Modificación y redistribución.",
+          "Integración en otros proyectos.",
+        ],
+      },
+      {
+        heading: "Importante",
+        items: [
+          "La licencia del código no cubre automáticamente los audios de assets/pasos.",
+          "Antes de publicar o redistribuir la biblioteca de audios, confirma permisos y autoría de cada archivo.",
+        ],
+      },
+    ],
+    linkLabel: "Abrir LICENSE",
+    linkHref: "./LICENSE",
+  },
+});
 const DEFAULT_TAG = "Sin etiqueta";
 const AVAILABLE_TAGS = [
   "Sin etiqueta",
@@ -161,6 +218,9 @@ const elements = {
   statusPill: document.querySelector("#statusPill"),
   matchName: document.querySelector("#matchName"),
   matchMeta: document.querySelector("#matchMeta"),
+  verdictContext: document.querySelector("#verdictContext"),
+  verdictContextTitle: document.querySelector("#verdictContextTitle"),
+  verdictContextText: document.querySelector("#verdictContextText"),
   matchesList: document.querySelector("#matchesList"),
   libraryGrid: document.querySelector("#libraryGrid"),
   fileInput: document.querySelector("#fileInput"),
@@ -207,6 +267,15 @@ const elements = {
   projectLicenseAdmin: document.querySelector("#projectLicenseAdmin"),
   projectReleaseLinkAdmin: document.querySelector("#projectReleaseLinkAdmin"),
   projectLicenseLinkAdmin: document.querySelector("#projectLicenseLinkAdmin"),
+  projectInfoModal: document.querySelector("#projectInfoModal"),
+  projectInfoKicker: document.querySelector("#projectInfoKicker"),
+  projectInfoTitle: document.querySelector("#projectInfoTitle"),
+  projectInfoHero: document.querySelector("#projectInfoHero"),
+  projectInfoSummary: document.querySelector("#projectInfoSummary"),
+  projectInfoBody: document.querySelector("#projectInfoBody"),
+  projectInfoExternalLink: document.querySelector("#projectInfoExternalLink"),
+  projectInfoDoneButton: document.querySelector("#projectInfoDoneButton"),
+  projectInfoCloseButton: document.querySelector("#projectInfoCloseButton"),
   userBottomNav: document.querySelector(".bottom-nav.user-mode-section"),
   adminBottomNav: document.querySelector(".bottom-nav--admin"),
   detectSection: document.querySelector("#detectSection"),
@@ -365,17 +434,6 @@ function renderProjectMeta() {
     elements.projectLicenseAdmin.textContent =
       `Código distribuido bajo licencia ${APP_LICENSE}. Los audios de la biblioteca pueden tener condiciones independientes.`;
   }
-
-  [elements.projectReleaseLinkUser, elements.projectReleaseLinkAdmin].forEach((link) => {
-    if (link) {
-      link.href = APP_RELEASE_URL;
-    }
-  });
-  [elements.projectLicenseLinkUser, elements.projectLicenseLinkAdmin].forEach((link) => {
-    if (link) {
-      link.href = "./LICENSE";
-    }
-  });
 }
 
 function bindEvents() {
@@ -392,9 +450,18 @@ function bindEvents() {
       closeAdminLoginModal();
     }
   });
+  elements.projectInfoModal?.addEventListener("click", (event) => {
+    if (event.target === elements.projectInfoModal) {
+      closeProjectInfoModal();
+    }
+  });
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !elements.adminLoginModal?.hidden) {
       closeAdminLoginModal();
+      return;
+    }
+    if (event.key === "Escape" && !elements.projectInfoModal?.hidden) {
+      closeProjectInfoModal();
     }
   });
   window.addEventListener("scroll", syncBottomNavByViewport, { passive: true });
@@ -448,6 +515,12 @@ function bindEvents() {
   });
 
   elements.shareResultButton.addEventListener("click", shareLastResult);
+  elements.projectReleaseLinkUser?.addEventListener("click", () => openProjectInfoModal("release"));
+  elements.projectReleaseLinkAdmin?.addEventListener("click", () => openProjectInfoModal("release"));
+  elements.projectLicenseLinkUser?.addEventListener("click", () => openProjectInfoModal("license"));
+  elements.projectLicenseLinkAdmin?.addEventListener("click", () => openProjectInfoModal("license"));
+  elements.projectInfoDoneButton?.addEventListener("click", closeProjectInfoModal);
+  elements.projectInfoCloseButton?.addEventListener("click", closeProjectInfoModal);
   elements.repeatResultButton.addEventListener("click", () => {
     if (!state.isListening) {
       toggleListening();
@@ -559,6 +632,44 @@ function bindEvents() {
       markMetadataDraft(input.dataset.metadataInput);
     }
   });
+}
+
+function openProjectInfoModal(kind) {
+  const content = PROJECT_INFO_CONTENT[kind];
+  if (!content || !elements.projectInfoModal) {
+    return;
+  }
+
+  elements.projectInfoKicker.textContent = content.kicker;
+  elements.projectInfoTitle.textContent = content.title;
+  elements.projectInfoHero.textContent = content.hero;
+  elements.projectInfoSummary.textContent = content.summary;
+  elements.projectInfoBody.innerHTML = content.body
+    .map(
+      (section) => `
+        <section class="project-info-section">
+          <h4>${escapeHtml(section.heading)}</h4>
+          <ul>
+            ${section.items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+          </ul>
+        </section>
+      `,
+    )
+    .join("");
+  elements.projectInfoExternalLink.textContent = content.linkLabel;
+  elements.projectInfoExternalLink.href = content.linkHref;
+  elements.projectInfoModal.hidden = false;
+  document.body.classList.add("project-info-open");
+  elements.projectInfoModal.querySelector(".project-info-modal")?.focus({ preventScroll: true });
+}
+
+function closeProjectInfoModal() {
+  if (!elements.projectInfoModal) {
+    return;
+  }
+
+  elements.projectInfoModal.hidden = true;
+  document.body.classList.remove("project-info-open");
 }
 
 function loadSavedState() {
@@ -1443,6 +1554,7 @@ async function startListening() {
     confidence: 0,
     matches: [],
     analysis: null,
+    verdictKind: "idle",
   });
 
   state.stopTimer = window.setTimeout(
@@ -1521,6 +1633,7 @@ async function stopListening({ manual = false } = {}) {
     confidence: 0,
     matches: [],
     analysis: null,
+    verdictKind: "idle",
   });
   showResultSection();
 
@@ -1569,6 +1682,7 @@ function processCapturedSignal(inputSignal, capturedSeconds) {
       confidence: 0,
       matches: [],
       analysis: null,
+      verdictKind: "inconclusive",
     });
     pushHistoryEntry({
       name: "Audio insuficiente",
@@ -1599,6 +1713,7 @@ function processCapturedSignal(inputSignal, capturedSeconds) {
       confidence: 0,
       matches: [],
       analysis: features,
+      verdictKind: "inconclusive",
     });
     updateStatus("idle", "Sin toque");
     pushHistoryEntry({
@@ -1623,6 +1738,7 @@ function processCapturedSignal(inputSignal, capturedSeconds) {
       confidence: 0,
       matches: [],
       analysis: features,
+      verdictKind: "inconclusive",
     });
     updateStatus("idle", "Sin coincidencia");
     pushHistoryEntry({
@@ -1660,6 +1776,7 @@ function processCapturedSignal(inputSignal, capturedSeconds) {
       confidence: probableFieldMatch ? getVisibleConfidence(bestMatch) : 0,
       matches: results,
       analysis: features,
+      verdictKind: probableFieldMatch && !ambiguity ? "probable" : ambiguity ? "ambiguous" : "inconclusive",
     });
     updateStatus(
       probableFieldMatch ? "probable" : ambiguity ? "ambiguous" : "idle",
@@ -1683,6 +1800,7 @@ function processCapturedSignal(inputSignal, capturedSeconds) {
     confidence: getVisibleConfidence(bestMatch),
     matches: results,
     analysis: features,
+    verdictKind: "confirmed",
   });
   updateStatus("match", "Detección completada");
   pushHistory(bestMatch, features, false);
@@ -4225,24 +4343,70 @@ function renderMatches(matches) {
     return;
   }
 
+  const topVisibleConfidence = Math.max(1, matches[0]?.displayConfidence ?? matches[0]?.confidence ?? 1);
   elements.matchesList.innerHTML = matches
     .map((match, index) => {
       const visibleConfidence = match.displayConfidence ?? match.confidence;
       const isWeak = match.confidence < state.settings.minimumConfidence;
+      const relativeScore = clamp(Math.round((visibleConfidence / topVisibleConfidence) * 100), 8, 100);
+      const leadDelta = index === 0
+        ? "Referencia líder"
+        : `${Math.max(0, topVisibleConfidence - visibleConfidence)} puntos por debajo del primero`;
       return `
         <article class="match-item">
           <div class="match-rank">${index + 1}</div>
-          <div>
+          <div class="match-body">
             <strong class="match-title">${escapeHtml(match.reference.name)}</strong>
             <div class="match-subtitle">${escapeHtml(
               isWeak ? "Coincidencia débil, revisar patrón" : match.reference.source,
             )}</div>
+            <div class="match-meter" aria-hidden="true">
+              <span class="match-meter__fill" style="width:${relativeScore}%"></span>
+            </div>
+            <div class="match-caption">${escapeHtml(leadDelta)}</div>
           </div>
           <div class="match-score">${visibleConfidence}%</div>
         </article>
       `;
     })
     .join("");
+}
+
+function renderVerdictContext(result = state.lastResult) {
+  if (!elements.verdictContext || !elements.verdictContextTitle || !elements.verdictContextText) {
+    return;
+  }
+
+  const verdictKind = result?.verdictKind || "idle";
+  const content = {
+    confirmed: {
+      title: "Coincidencia sólida",
+      text: "La evidencia actual es consistente. Si la toma ha sonado limpia, puedes dar el veredicto por bueno.",
+    },
+    probable: {
+      title: "Buen candidato, aún sin cierre total",
+      text: "El primer toque va claramente por delante, pero conviene repetir si necesitas máxima seguridad o documentación.",
+    },
+    ambiguous: {
+      title: "Hay dos toques muy cercanos",
+      text: "La captura apunta bien, pero otro candidato sigue demasiado cerca. Repite más cerca del tambor o amplía la escucha.",
+    },
+    inconclusive: {
+      title: "La escucha no permite decidir",
+      text: "La señal ha quedado corta o con poco contraste. Repite la toma y procura captar un tramo más distintivo.",
+    },
+    idle: {
+      title: "Esperando una escucha",
+      text: "Cuando captures un toque, aquí verás una guía rápida para interpretar el veredicto.",
+    },
+  }[verdictKind] || {
+    title: "Esperando una escucha",
+    text: "Cuando captures un toque, aquí verás una guía rápida para interpretar el veredicto.",
+  };
+
+  elements.verdictContext.className = `verdict-context verdict-context--${verdictKind}`;
+  elements.verdictContextTitle.textContent = content.title;
+  elements.verdictContextText.textContent = content.text;
 }
 
 function renderHistory() {
@@ -4561,6 +4725,10 @@ function setCaptureInteractionState(isLocked, { allowListenButton = false } = {}
     elements.shareResultButton,
     elements.repeatResultButton,
     elements.extendListenButton,
+    elements.projectReleaseLinkUser,
+    elements.projectLicenseLinkUser,
+    elements.projectReleaseLinkAdmin,
+    elements.projectLicenseLinkAdmin,
     elements.captureDuration,
     elements.minimumConfidence,
     elements.analysisMode,
@@ -4645,6 +4813,10 @@ function setAppLoadingState(isLoading, options = {}) {
     elements.shareResultButton,
     elements.repeatResultButton,
     elements.extendListenButton,
+    elements.projectReleaseLinkUser,
+    elements.projectLicenseLinkUser,
+    elements.projectReleaseLinkAdmin,
+    elements.projectLicenseLinkAdmin,
     elements.captureDuration,
     elements.minimumConfidence,
     elements.analysisMode,
@@ -4680,7 +4852,7 @@ function delay(ms) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-function updateResult({ name, meta, confidence, matches, analysis }) {
+function updateResult({ name, meta, confidence, matches, analysis, verdictKind = "idle" }) {
   elements.matchName.textContent = name;
   elements.matchMeta.textContent = meta;
   elements.confidenceValue.textContent = `${confidence}%`;
@@ -4690,7 +4862,8 @@ function updateResult({ name, meta, confidence, matches, analysis }) {
     : "0 bpm";
   elements.capturedPeaks.textContent = String(analysis?.peaksCount ?? 0);
   renderMatches(matches);
-  state.lastResult = { name, meta, confidence, matches, analysis };
+  state.lastResult = { name, meta, confidence, matches, analysis, verdictKind };
+  renderVerdictContext(state.lastResult);
 }
 
 function formatMatchMeta(match, analysis) {

@@ -218,6 +218,13 @@
             </button>
           </div>
 
+          <div id="verdictContext" class="verdict-context verdict-context--idle" aria-live="polite">
+            <div class="verdict-context__copy">
+              <strong id="verdictContextTitle">Esperando una escucha</strong>
+              <p id="verdictContextText">Cuando captures un toque, aquí verás una guía rápida para interpretar el veredicto.</p>
+            </div>
+          </div>
+
           <div class="rankings">
             <div class="section-head compact">
               <h4>Coincidencias más probables</h4>
@@ -475,24 +482,20 @@
               <small>El código usa licencia libre. Los audios pueden requerir permisos aparte.</small>
             </div>
             <div class="project-meta-banner__actions">
-              <a
+              <button
                 id="projectReleaseLinkUser"
                 class="ghost-button compact-ghost"
-                href="#"
-                target="_blank"
-                rel="noreferrer"
+                type="button"
               >
                 Release
-              </a>
-              <a
+              </button>
+              <button
                 id="projectLicenseLinkUser"
                 class="ghost-button compact-ghost"
-                href="./LICENSE"
-                target="_blank"
-                rel="noreferrer"
+                type="button"
               >
                 Licencia
-              </a>
+              </button>
             </div>
           </div>
         </section>
@@ -528,24 +531,20 @@
             </div>
             <p id="projectLicenseAdmin" class="project-meta-panel__text">Licencia</p>
             <div class="project-meta-panel__actions">
-              <a
+              <button
                 id="projectReleaseLinkAdmin"
                 class="secondary-button compact-secondary"
-                href="#"
-                target="_blank"
-                rel="noreferrer"
+                type="button"
               >
                 Ver release
-              </a>
-              <a
+              </button>
+              <button
                 id="projectLicenseLinkAdmin"
                 class="ghost-button compact-ghost"
-                href="./LICENSE"
-                target="_blank"
-                rel="noreferrer"
+                type="button"
               >
                 Ver licencia
-              </a>
+              </button>
             </div>
           </div>
           <div class="admin-help-grid">
@@ -712,6 +711,45 @@ python3 ./scripts/serve_https.py --host 0.0.0.0 --port 8443</code></pre>
             </button>
           </div>
         </form>
+      </section>
+    </div>
+
+    <div id="projectInfoModal" class="modal-backdrop" hidden>
+      <section
+        class="project-info-modal glass"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="projectInfoTitle"
+        tabindex="-1"
+      >
+        <div class="section-head compact project-info-modal__head">
+          <div>
+            <p id="projectInfoKicker" class="eyebrow">Proyecto</p>
+            <h3 id="projectInfoTitle">Información</h3>
+          </div>
+          <button id="projectInfoCloseButton" class="icon-button" type="button" aria-label="Cerrar">
+            ×
+          </button>
+        </div>
+        <div class="project-info-hero">
+          <strong id="projectInfoHero">CofraBeat</strong>
+          <p id="projectInfoSummary" class="project-info-summary"></p>
+        </div>
+        <div id="projectInfoBody" class="project-info-body"></div>
+        <div class="project-info-actions">
+          <a
+            id="projectInfoExternalLink"
+            class="secondary-button compact-secondary"
+            href="#"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Abrir enlace
+          </a>
+          <button id="projectInfoDoneButton" class="ghost-button compact-ghost" type="button">
+            Volver a la app
+          </button>
+        </div>
       </section>
     </div>
 
