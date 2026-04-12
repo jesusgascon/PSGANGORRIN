@@ -215,6 +215,7 @@ const elements = {
   listenTimer: document.querySelector("#listenTimer"),
   meterFill: document.querySelector("#meterFill"),
   resultState: document.querySelector("#resultState"),
+  resultKicker: document.querySelector("#resultKicker"),
   confidenceValue: document.querySelector("#confidenceValue"),
   statusPill: document.querySelector("#statusPill"),
   matchName: document.querySelector("#matchName"),
@@ -1432,7 +1433,7 @@ async function refreshMicrophoneStatus() {
   }
 
   if (!navigator.permissions?.query) {
-    setMicrophoneVisualState("Listo", "ready", "El navegador puede pedir el micrófono al empezar la escucha.");
+    setMicrophoneVisualState("Micrófono listo", "ready", "El navegador puede pedir el micrófono al empezar la escucha.");
     return;
   }
 
@@ -1446,7 +1447,7 @@ async function refreshMicrophoneStatus() {
       setMicrophoneVisualState("Permiso pendiente", "pending", "El navegador te pedirá acceso cuando pulses Escuchar.");
     }
   } catch (error) {
-    setMicrophoneVisualState("Listo", "ready", "El contexto es válido; la comprobación avanzada no está disponible.");
+    setMicrophoneVisualState("Micrófono listo", "ready", "El contexto es válido; la comprobación avanzada no está disponible.");
   }
 }
 
@@ -4417,31 +4418,40 @@ function renderVerdictContext(result = state.lastResult) {
   const verdictKind = result?.verdictKind || "idle";
   const content = {
     confirmed: {
+      kicker: "Toque confirmado",
       title: "Coincidencia sólida",
       text: "La evidencia actual es consistente. Si la toma ha sonado limpia, puedes dar el veredicto por bueno.",
     },
     probable: {
+      kicker: "Posible toque",
       title: "Buen candidato, aún sin cierre total",
       text: "El primer toque va claramente por delante, pero conviene repetir si necesitas máxima seguridad o documentación.",
     },
     ambiguous: {
+      kicker: "Toque ambiguo",
       title: "Hay dos toques muy cercanos",
       text: "La captura apunta bien, pero otro candidato sigue demasiado cerca. Repite más cerca del tambor o amplía la escucha.",
     },
     inconclusive: {
+      kicker: "Sin veredicto fiable",
       title: "La escucha no permite decidir",
       text: "La señal ha quedado corta o con poco contraste. Repite la toma y procura captar un tramo más distintivo.",
     },
     idle: {
+      kicker: "Toque más probable",
       title: "Esperando una escucha",
       text: "Cuando captures un toque, aquí verás una guía rápida para interpretar el veredicto.",
     },
   }[verdictKind] || {
+    kicker: "Toque más probable",
     title: "Esperando una escucha",
     text: "Cuando captures un toque, aquí verás una guía rápida para interpretar el veredicto.",
   };
 
   elements.verdictContext.className = `verdict-context verdict-context--${verdictKind}`;
+  if (elements.resultKicker) {
+    elements.resultKicker.textContent = content.kicker;
+  }
   elements.verdictContextTitle.textContent = content.title;
   elements.verdictContextText.textContent = content.text;
 }
