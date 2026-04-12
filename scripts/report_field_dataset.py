@@ -52,6 +52,7 @@ def main() -> None:
 
     summary = {
         "confirmed": 0,
+        "probable_ambiguous": 0,
         "probable": 0,
         "unconfirmed": 0,
         "ambiguous": 0,
@@ -104,27 +105,29 @@ def main() -> None:
             summary["confirmed"] += 1
             print(f"Estado: OK CONFIRMADO · {best['reference'].get('name')} ({best['confidence']}%)")
         elif ambiguity:
-            summary["ambiguous"] += 1
             if probable and best and best["reference"].get("file") == expected_file:
+                summary["probable_ambiguous"] += 1
                 print(
                     "Estado: PROBABLE AMBIGUO · correcto primero, pero sin confirmar · "
                     f"{best['reference'].get('name')} / {ambiguity['reference'].get('name')}"
                 )
-            elif best and best["reference"].get("file") == expected_file:
-                print(
-                    "Estado: AMBIGUO · correcto primero, pero sin confirmar · "
-                    f"{best['reference'].get('name')} / {ambiguity['reference'].get('name')}"
-                )
-            elif ambiguity["reference"].get("file") == expected_file:
-                print(
-                    "Estado: AMBIGUO · correcto entre candidatos · "
-                    f"{best['reference'].get('name')} / {ambiguity['reference'].get('name')}"
-                )
             else:
-                print(
-                    "Estado: AMBIGUO · "
-                    f"{best['reference'].get('name')} / {ambiguity['reference'].get('name')}"
-                )
+                summary["ambiguous"] += 1
+                if best and best["reference"].get("file") == expected_file:
+                    print(
+                        "Estado: AMBIGUO · correcto primero, pero sin confirmar · "
+                        f"{best['reference'].get('name')} / {ambiguity['reference'].get('name')}"
+                    )
+                elif ambiguity["reference"].get("file") == expected_file:
+                    print(
+                        "Estado: AMBIGUO · correcto entre candidatos · "
+                        f"{best['reference'].get('name')} / {ambiguity['reference'].get('name')}"
+                    )
+                else:
+                    print(
+                        "Estado: AMBIGUO · "
+                        f"{best['reference'].get('name')} / {ambiguity['reference'].get('name')}"
+                    )
         elif probable and best and best["reference"].get("file") == expected_file:
             summary["probable"] += 1
             print(f"Estado: PROBABLE · {best['reference'].get('name')} ({best['confidence']}%)")
@@ -160,6 +163,7 @@ def main() -> None:
     print("Resumen:")
     print(f"  OK confirmadas: {summary['confirmed']}")
     print(f"  Probables: {summary['probable']}")
+    print(f"  Probables ambiguas: {summary['probable_ambiguous']}")
     print(f"  OK no confirmadas: {summary['unconfirmed']}")
     print(f"  Ambiguas: {summary['ambiguous']}")
     print(f"  Fallos reales: {summary['wrong']}")

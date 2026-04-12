@@ -81,6 +81,11 @@ Desde un movil en la misma Wi-Fi:
 http://IP-DE-TU-ORDENADOR:8000
 ```
 
+Uso recomendado:
+
+- `HTTP` para pruebas rapidas de usuario en local
+- `HTTPS` para usar microfono en navegadores exigentes y para administracion global desde otros dispositivos
+
 Si el movil no concede microfono por HTTP, usa HTTPS local:
 
 ```bash
@@ -88,6 +93,11 @@ chmod +x ./scripts/generate-dev-cert.sh
 ./scripts/generate-dev-cert.sh IP-DE-TU-ORDENADOR
 python3 ./scripts/serve_https.py --host 0.0.0.0 --port 8443
 ```
+
+Nota de seguridad:
+
+- el modo administrador global queda habilitado en `HTTPS` o en `localhost`
+- en red local por `HTTP` la administracion global se bloquea para no exponer sesion ni credenciales
 
 ## Requisitos
 

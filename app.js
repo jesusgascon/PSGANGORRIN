@@ -1192,8 +1192,10 @@ async function toggleMode() {
     }
 
     showToast(
-      "Abre con servidor",
-      "El modo administrador necesita el servidor local o la demo publica de GitHub Pages.",
+      "Admin protegido",
+      isLoopbackHost()
+        ? "El modo administrador necesita el servidor local del proyecto."
+        : "La administración global solo se habilita en HTTPS o en localhost. En red local por HTTP queda bloqueada por seguridad.",
       "warning",
     );
     return;
@@ -1241,8 +1243,10 @@ async function handleAdminLoginSubmit(event) {
   elements.adminLoginSubmitButton.textContent = "Entrar";
 
   if (!authenticated) {
-    elements.adminLoginError.textContent = "Contraseña incorrecta.";
-    elements.adminLoginError.hidden = false;
+    if (elements.adminLoginError.hidden || !elements.adminLoginError.textContent.trim()) {
+      elements.adminLoginError.textContent = "Contraseña incorrecta.";
+      elements.adminLoginError.hidden = false;
+    }
     elements.adminPasswordInput.select();
     return;
   }
@@ -1258,12 +1262,16 @@ function canUseAdminApi() {
   return (
     !isFileProtocol() &&
     !isStaticPublicDemo() &&
-    ["http:", "https:"].includes(window.location.protocol)
+    (window.location.protocol === "https:" || isLoopbackHost())
   );
 }
 
 function isStaticPublicDemo() {
   return window.location.hostname.endsWith(GITHUB_PAGES_HOST_SUFFIX);
+}
+
+function isLoopbackHost() {
+  return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
 }
 
 function enterStaticAdminDemo() {
@@ -1320,7 +1328,20 @@ async function loginAdminSession(password) {
       },
       body: JSON.stringify({ password }),
     });
-    const payload = response.ok ? await response.json() : { authenticated: false };
+    const payload = await response.json().catch(() => ({ authenticated: false }));
+    if (response.status === 403) {
+      if (elements.adminLoginError) {
+        elements.adminLoginError.textContent =
+          payload.error || "La administración global solo está disponible en HTTPS o localhost.";
+        elements.adminLoginError.hidden = false;
+      }
+      showToast(
+        "Admin protegido",
+        payload.error || "La administración global solo está disponible en HTTPS o localhost.",
+        "warning",
+      );
+      return false;
+    }
     return Boolean(payload.authenticated);
   } catch (error) {
     showToast(

@@ -10,22 +10,30 @@ import pathlib
 import secrets
 import socketserver
 import ssl
+import threading
 from http import HTTPStatus
 
 from calibrate_detection import write_calibration_files
-from library_manifest import read_metadata, write_library_files, write_metadata
+from library_manifest import SUPPORTED_EXTENSIONS, read_metadata, write_library_files, write_metadata
 
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
 ADMIN_PASSWORD = os.environ.get("COFRABEAT_ADMIN_PASSWORD", "psangorrin")
 ADMIN_COOKIE = "cofrabeat_admin"
 ADMIN_SESSIONS: set[str] = set()
+REFRESH_LOCK = threading.Lock()
 
 
 class CofraBeatHttpsHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/admin/status":
-            return self.send_json({"authenticated": self.is_admin_authenticated()})
+            return self.send_json(
+                {
+                    "authenticated": self.is_admin_authenticated(),
+                    "adminAvailable": True,
+                    "requiresHttps": False,
+                }
+            )
 
         if self.path == "/api/admin/metadata":
             if not self.is_admin_authenticated():
@@ -127,8 +135,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--port", type=int, default=8443, help="Puerto HTTPS. Por defecto 8443")
     parser.add_argument(
         "--directory",
-        default=".",
-        help="Directorio a servir. Por defecto el directorio actual.",
+        default=str(PROJECT_ROOT),
+        help="Directorio a servir. Por defecto la raiz del proyecto.",
     )
     parser.add_argument(
         "--cert",
@@ -144,11 +152,38 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def refresh_library() -> None:
-    write_library_files(PROJECT_ROOT)
-    try:
-        write_calibration_files(PROJECT_ROOT, regenerate_library=False)
-    except (Exception, SystemExit) as error:
-        print(f"Calibracion no generada: {error}")
+    with REFRESH_LOCK:
+        if not library_refresh_needed(PROJECT_ROOT):
+            return
+        write_library_files(PROJECT_ROOT)
+        try:
+            write_calibration_files(PROJECT_ROOT, regenerate_library=False)
+        except (Exception, SystemExit) as error:
+            print(f"Calibracion no generada: {error}")
+
+
+def library_refresh_needed(project_root: pathlib.Path) -> bool:
+    pasos_dir = project_root / "assets" / "pasos"
+    outputs = [pasos_dir / "manifest.json", pasos_dir / "features.json", pasos_dir / "calibration.json"]
+    if any(not path.exists() for path in outputs):
+        return True
+
+    newest_output = min(path.stat().st_mtime for path in outputs)
+    source_paths = [
+        path for path in pasos_dir.iterdir()
+        if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
+    ]
+    source_paths.extend(
+        [
+            pasos_dir / "metadata.json",
+            project_root / "scripts" / "library_manifest.py",
+            project_root / "scripts" / "calibrate_detection.py",
+        ]
+    )
+    existing_sources = [path for path in source_paths if path.exists()]
+    if not existing_sources:
+        return False
+    return max(path.stat().st_mtime for path in existing_sources) > newest_output
 
 
 def main() -> None:

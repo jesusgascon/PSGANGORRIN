@@ -8,17 +8,19 @@ import json
 import os
 import secrets
 import socketserver
+import threading
 from pathlib import Path
 from http import HTTPStatus
 
 from calibrate_detection import write_calibration_files
-from library_manifest import read_metadata, write_library_files, write_metadata
+from library_manifest import SUPPORTED_EXTENSIONS, read_metadata, write_library_files, write_metadata
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ADMIN_PASSWORD = os.environ.get("COFRABEAT_ADMIN_PASSWORD", "psangorrin")
 ADMIN_COOKIE = "cofrabeat_admin"
 ADMIN_SESSIONS: set[str] = set()
+REFRESH_LOCK = threading.Lock()
 
 
 class CofraBeatHandler(http.server.SimpleHTTPRequestHandler):
@@ -27,7 +29,13 @@ class CofraBeatHandler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/api/admin/status":
-            return self.send_json({"authenticated": self.is_admin_authenticated()})
+            return self.send_json(
+                {
+                    "authenticated": self.is_admin_authenticated(),
+                    "adminAvailable": self.is_admin_available(),
+                    "requiresHttps": not self.is_loopback_request(),
+                }
+            )
 
         if self.path == "/api/admin/metadata":
             if not self.is_admin_authenticated():
@@ -57,6 +65,11 @@ class CofraBeatHandler(http.server.SimpleHTTPRequestHandler):
         self.send_error(HTTPStatus.NOT_FOUND, "API no encontrada")
 
     def handle_admin_metadata(self):
+        if not self.is_admin_available():
+            return self.send_json(
+                {"error": "Administración global solo disponible en HTTPS o localhost"},
+                HTTPStatus.FORBIDDEN,
+            )
         if not self.is_admin_authenticated():
             return self.send_json({"error": "No autorizado"}, HTTPStatus.UNAUTHORIZED)
 
@@ -71,6 +84,11 @@ class CofraBeatHandler(http.server.SimpleHTTPRequestHandler):
         return self.send_json({"saved": True, "metadata": read_metadata(PROJECT_ROOT)})
 
     def handle_admin_login(self):
+        if not self.is_admin_available():
+            return self.send_json(
+                {"authenticated": False, "error": "HTTPS requerido para administración remota"},
+                HTTPStatus.FORBIDDEN,
+            )
         try:
             length = int(self.headers.get("Content-Length", "0"))
             payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
@@ -105,6 +123,12 @@ class CofraBeatHandler(http.server.SimpleHTTPRequestHandler):
         token = self.get_admin_cookie()
         return bool(token and token in ADMIN_SESSIONS)
 
+    def is_admin_available(self) -> bool:
+        return self.is_loopback_request()
+
+    def is_loopback_request(self) -> bool:
+        return self.client_address[0] in {"127.0.0.1", "::1"}
+
     def get_admin_cookie(self) -> str | None:
         cookie_header = self.headers.get("Cookie", "")
         for part in cookie_header.split(";"):
@@ -128,11 +152,38 @@ class ReusableTCPServer(socketserver.TCPServer):
 
 
 def refresh_library() -> None:
-    write_library_files(PROJECT_ROOT)
-    try:
-        write_calibration_files(PROJECT_ROOT, regenerate_library=False)
-    except (Exception, SystemExit) as error:
-        print(f"Calibracion no generada: {error}")
+    with REFRESH_LOCK:
+        if not library_refresh_needed(PROJECT_ROOT):
+            return
+        write_library_files(PROJECT_ROOT)
+        try:
+            write_calibration_files(PROJECT_ROOT, regenerate_library=False)
+        except (Exception, SystemExit) as error:
+            print(f"Calibracion no generada: {error}")
+
+
+def library_refresh_needed(project_root: Path) -> bool:
+    pasos_dir = project_root / "assets" / "pasos"
+    outputs = [pasos_dir / "manifest.json", pasos_dir / "features.json", pasos_dir / "calibration.json"]
+    if any(not path.exists() for path in outputs):
+        return True
+
+    newest_output = min(path.stat().st_mtime for path in outputs)
+    source_paths = [
+        path for path in pasos_dir.iterdir()
+        if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
+    ]
+    source_paths.extend(
+        [
+            pasos_dir / "metadata.json",
+            project_root / "scripts" / "library_manifest.py",
+            project_root / "scripts" / "calibrate_detection.py",
+        ]
+    )
+    existing_sources = [path for path in source_paths if path.exists()]
+    if not existing_sources:
+        return False
+    return max(path.stat().st_mtime for path in existing_sources) > newest_output
 
 
 def build_parser() -> argparse.ArgumentParser:
