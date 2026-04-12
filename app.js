@@ -67,6 +67,11 @@ const STORAGE_KEYS = {
 };
 const SETTINGS_SCHEMA_VERSION = 4;
 const FEATURE_SCHEMA_VERSION = 5;
+const VARIANT_CACHE_SYMBOL = Symbol("referenceVariantCache");
+const VARIANT_CACHE_FEATURES_SYMBOL = Symbol("referenceVariantCacheFeatures");
+const VARIANT_CACHE_SEGMENTS_SYMBOL = Symbol("referenceVariantCacheSegments");
+const HASH_CACHE_SYMBOL = Symbol("hashCache");
+const EMPTY_HASH_SET = new Set();
 const DB_NAME = "cofrabeat-library";
 const DB_VERSION = 2;
 const DB_STORE_REFERENCES = "references";
@@ -1442,25 +1447,13 @@ async function stopListening({ manual = false } = {}) {
   cleanupListeningNodes();
 
   try {
-    await delay(180);
-    setAnalysisState(true, {
-      title: "Analizando el toque",
-      meta: "Midiendo patrón rítmico y limpiando la captura para la comparación.",
-      label: `Audio captado: ${capturedSeconds.toFixed(1)} s · filtrando y extrayendo rasgos.`,
-    });
-    await delay(360);
+    await new Promise((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)));
     setAnalysisState(true, {
       title: "Cruzando la biblioteca",
       meta: "Comparando landmarks, ventanas fuertes y coincidencias temporales.",
       label: `Audio captado: ${capturedSeconds.toFixed(1)} s · buscando el mejor encaje entre referencias.`,
     });
-    await delay(420);
-    setAnalysisState(true, {
-      title: "Preparando resultado final",
-      meta: "Ordenando candidatos y calculando el nivel de confirmación.",
-      label: `Audio captado: ${capturedSeconds.toFixed(1)} s · cerrando diagnóstico visual.`,
-    });
-    await delay(420);
+    await delay(60);
     processCapturedSignal(inputSignal, capturedSeconds);
   } catch (error) {
     console.error("No se pudo procesar la captura", error);
@@ -2785,20 +2778,7 @@ function estimateFieldSegmentDistinctiveness(segmentFeatures, ownerId, reference
 }
 
 function iterateReferenceVariantFeatures(reference) {
-  if (!reference?.features) {
-    return [];
-  }
-
-  const variants = [reference.features];
-  const segments = Array.isArray(reference.features.strongSegments)
-    ? reference.features.strongSegments
-    : [];
-  segments.slice(0, Math.min(MAX_REFERENCE_SEGMENTS, 5)).forEach((segment) => {
-    if (segment?.features) {
-      variants.push(segment.features);
-    }
-  });
-  return variants;
+  return buildReferenceFeatureVariants(reference).map((variant) => variant.features);
 }
 
 function measureReferenceFeatureSimilarity(left, right) {
@@ -2868,8 +2848,8 @@ function measureFieldReferenceSimilarity(left, right) {
 }
 
 function fingerprintHashSimilarity(left, right) {
-  const leftHashes = new Set(left.map((item) => item?.hash).filter(Boolean));
-  const rightHashes = new Set(right.map((item) => item?.hash).filter(Boolean));
+  const leftHashes = getFingerprintHashSet(left);
+  const rightHashes = getFingerprintHashSet(right);
   if (!leftHashes.size || !rightHashes.size) {
     return 0;
   }
@@ -3162,17 +3142,28 @@ function compareVariantScores(left, right, modeKey) {
 }
 
 function buildReferenceFeatureVariants(reference) {
+  if (!reference?.features) {
+    return [];
+  }
+
+  const features = reference.features;
+  const segments = Array.isArray(features.strongSegments) ? features.strongSegments : [];
+  if (
+    reference[VARIANT_CACHE_SYMBOL] &&
+    reference[VARIANT_CACHE_FEATURES_SYMBOL] === features &&
+    reference[VARIANT_CACHE_SEGMENTS_SYMBOL] === segments
+  ) {
+    return reference[VARIANT_CACHE_SYMBOL];
+  }
+
   const variants = [
     {
       type: "full",
       startSeconds: 0,
-      durationSeconds: reference.features.durationSeconds,
-      features: reference.features,
+      durationSeconds: features.durationSeconds,
+      features,
     },
   ];
-  const segments = Array.isArray(reference.features.strongSegments)
-    ? reference.features.strongSegments
-    : [];
 
   segments.forEach((segment) => {
     if (!segment?.features) {
@@ -3187,7 +3178,34 @@ function buildReferenceFeatureVariants(reference) {
     });
   });
 
+  reference[VARIANT_CACHE_SYMBOL] = variants;
+  reference[VARIANT_CACHE_FEATURES_SYMBOL] = features;
+  reference[VARIANT_CACHE_SEGMENTS_SYMBOL] = segments;
   return variants;
+}
+
+function getFingerprintHashSet(items) {
+  if (!Array.isArray(items) || !items.length) {
+    return EMPTY_HASH_SET;
+  }
+
+  if (items[HASH_CACHE_SYMBOL]) {
+    return items[HASH_CACHE_SYMBOL];
+  }
+
+  const hashes = new Set();
+  for (let index = 0; index < items.length; index += 1) {
+    const hash = items[index]?.hash;
+    if (hash) {
+      hashes.add(hash);
+    }
+  }
+
+  Object.defineProperty(items, HASH_CACHE_SYMBOL, {
+    value: hashes,
+    configurable: true,
+  });
+  return hashes;
 }
 
 function scoreReferenceVariant(inputFeatures, reference, variant, preset, modeKey) {
