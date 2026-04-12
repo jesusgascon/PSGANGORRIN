@@ -4370,9 +4370,10 @@ function renderMatches(matches) {
       const visibleConfidence = match.displayConfidence ?? match.confidence;
       const isWeak = match.confidence < state.settings.minimumConfidence;
       const relativeScore = clamp(Math.round((visibleConfidence / topVisibleConfidence) * 100), 8, 100);
-      const patternValue = Math.round((match.patternScore || 0) * 100);
-      const timbreValue = Math.round((match.timbreSimilarity || 0) * 100);
-      const landmarkValue = Math.round((match.landmarkSimilarity || 0) * 100);
+      const diagnostics = match.diagnostics || {};
+      const patternValue = Math.round((diagnostics.patternScore || 0) * 100);
+      const timbreValue = Math.round((diagnostics.timbreScore || 0) * 100);
+      const landmarkValue = Math.round((diagnostics.landmarkSimilarity || 0) * 100);
       const leadDelta = index === 0
         ? "Referencia líder"
         : `${Math.max(0, topVisibleConfidence - visibleConfidence)} puntos por debajo del primero`;
