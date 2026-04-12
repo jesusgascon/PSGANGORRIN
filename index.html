@@ -94,10 +94,18 @@
           <div class="hero-copy">
             <p class="eyebrow">Semana Santa · Tambor</p>
             <h2>Detector de toques</h2>
+            <p class="hero-lead">
+              Reconocimiento rápido para ensayos, calle y validación de biblioteca local.
+            </p>
             <p class="hero-text">
               Pulsa el tambor central y compara el toque con tu base de audios,
               al estilo Shazam.
             </p>
+            <div class="hero-highlights" aria-label="Capacidades principales">
+              <span class="hero-highlight hero-highlight--field">Micro real</span>
+              <span class="hero-highlight hero-highlight--history">Historial filtrable</span>
+              <span class="hero-highlight hero-highlight--admin">Panel admin</span>
+            </div>
 
             <div class="hero-stats">
               <article class="stat-chip">
@@ -161,9 +169,10 @@
             </div>
 
             <div class="device-status">
-              <article class="device-chip">
+              <article id="micStatusCard" class="device-chip device-chip--mic">
                 <span>Micrófono</span>
                 <strong id="micStatusLabel">Comprobando</strong>
+                <small id="micStatusHint" class="device-chip__hint">Preparando permisos del navegador.</small>
               </article>
               <article class="device-chip">
                 <span>Conexión</span>
@@ -178,6 +187,7 @@
             <div>
               <p class="eyebrow">Veredicto</p>
               <h3>Detección encontrada</h3>
+              <p class="section-subtitle">Lectura principal, nivel de confianza y alternativas cercanas.</p>
             </div>
             <span id="statusPill" class="status-pill idle">Esperando audio</span>
           </div>
@@ -227,7 +237,10 @@
 
           <div class="rankings">
             <div class="section-head compact">
-              <h4>Coincidencias más probables</h4>
+              <div>
+                <h4>Coincidencias más probables</h4>
+                <p class="section-subtitle compact-subtitle">La primera manda; el resto sirven para revisar cercanía y conflicto.</p>
+              </div>
             </div>
             <div id="matchesList" class="matches-list"></div>
           </div>
@@ -287,6 +300,7 @@
               <div>
                 <p class="eyebrow">Administración</p>
                 <h3>Biblioteca de toques</h3>
+                <p class="section-subtitle">Estado global, accesos rápidos y mantenimiento de la base local.</p>
               </div>
               <label class="upload-button">
                 <input id="fileInput" type="file" accept=".mp3,audio/mpeg" multiple />
@@ -408,7 +422,10 @@
 
         <section id="historySection" class="history-card glass user-mode-section">
           <div class="section-head compact">
-            <h4>Historial reciente</h4>
+            <div>
+              <h4>Historial reciente</h4>
+              <p class="section-subtitle compact-subtitle">Revisa escuchas guardadas, filtra estados y localiza patrones repetidos.</p>
+            </div>
             <button id="clearHistoryButton" class="ghost-button" type="button">
               Borrar
             </button>

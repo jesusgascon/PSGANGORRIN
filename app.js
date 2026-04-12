@@ -214,6 +214,7 @@ const elements = {
   listenHint: document.querySelector("#listenHint"),
   listenTimer: document.querySelector("#listenTimer"),
   meterFill: document.querySelector("#meterFill"),
+  resultState: document.querySelector("#resultState"),
   confidenceValue: document.querySelector("#confidenceValue"),
   statusPill: document.querySelector("#statusPill"),
   matchName: document.querySelector("#matchName"),
@@ -233,7 +234,9 @@ const elements = {
   modeToggleButton: document.querySelector("#modeToggleButton"),
   capturedTempo: document.querySelector("#capturedTempo"),
   capturedPeaks: document.querySelector("#capturedPeaks"),
+  micStatusCard: document.querySelector("#micStatusCard"),
   micStatusLabel: document.querySelector("#micStatusLabel"),
+  micStatusHint: document.querySelector("#micStatusHint"),
   transportStatusLabel: document.querySelector("#transportStatusLabel"),
   captureDuration: document.querySelector("#captureDuration"),
   captureDurationValue: document.querySelector("#captureDurationValue"),
@@ -1412,25 +1415,43 @@ async function refreshMicrophoneStatus() {
   }
 
   if (!navigator.mediaDevices?.getUserMedia) {
-    elements.micStatusLabel.textContent = "No compatible";
+    setMicrophoneVisualState("No compatible", "unsupported", "Este navegador no expone captura de micrófono para esta app.");
     return;
   }
 
   if (!window.isSecureContext && !isDevelopmentHost()) {
-    elements.micStatusLabel.textContent = "Bloqueado";
+    setMicrophoneVisualState("Bloqueado por HTTP", "blocked", "Abre la app en localhost o por HTTPS para pedir permiso.");
     return;
   }
 
   if (!navigator.permissions?.query) {
-    elements.micStatusLabel.textContent = "Listo";
+    setMicrophoneVisualState("Listo", "ready", "El navegador puede pedir el micrófono al empezar la escucha.");
     return;
   }
 
   try {
     const status = await navigator.permissions.query({ name: "microphone" });
-    elements.micStatusLabel.textContent = permissionStateToLabel(status.state);
+    if (status.state === "granted") {
+      setMicrophoneVisualState("Micrófono listo", "ready", "Permiso concedido. Puedes escuchar ahora mismo.");
+    } else if (status.state === "denied") {
+      setMicrophoneVisualState("Permiso denegado", "blocked", "Revisa los permisos del sitio y vuelve a intentarlo.");
+    } else {
+      setMicrophoneVisualState("Permiso pendiente", "pending", "El navegador te pedirá acceso cuando pulses Escuchar.");
+    }
   } catch (error) {
-    elements.micStatusLabel.textContent = "Listo";
+    setMicrophoneVisualState("Listo", "ready", "El contexto es válido; la comprobación avanzada no está disponible.");
+  }
+}
+
+function setMicrophoneVisualState(label, kind, hint) {
+  if (elements.micStatusLabel) {
+    elements.micStatusLabel.textContent = label;
+  }
+  if (elements.micStatusHint) {
+    elements.micStatusHint.textContent = hint;
+  }
+  if (elements.micStatusCard) {
+    elements.micStatusCard.className = `device-chip device-chip--mic is-${kind}`;
   }
 }
 
@@ -4349,6 +4370,9 @@ function renderMatches(matches) {
       const visibleConfidence = match.displayConfidence ?? match.confidence;
       const isWeak = match.confidence < state.settings.minimumConfidence;
       const relativeScore = clamp(Math.round((visibleConfidence / topVisibleConfidence) * 100), 8, 100);
+      const patternValue = Math.round((match.patternScore || 0) * 100);
+      const timbreValue = Math.round((match.timbreSimilarity || 0) * 100);
+      const landmarkValue = Math.round((match.landmarkSimilarity || 0) * 100);
       const leadDelta = index === 0
         ? "Referencia líder"
         : `${Math.max(0, topVisibleConfidence - visibleConfidence)} puntos por debajo del primero`;
@@ -4360,6 +4384,11 @@ function renderMatches(matches) {
             <div class="match-subtitle">${escapeHtml(
               isWeak ? "Coincidencia débil, revisar patrón" : match.reference.source,
             )}</div>
+            <div class="match-metrics" aria-label="Métricas clave">
+              <span class="match-metric-chip"><strong>${patternValue}%</strong><small>Patrón</small></span>
+              <span class="match-metric-chip"><strong>${timbreValue}%</strong><small>Timbre</small></span>
+              <span class="match-metric-chip"><strong>${landmarkValue}%</strong><small>Landmarks</small></span>
+            </div>
             <div class="match-meter" aria-hidden="true">
               <span class="match-meter__fill" style="width:${relativeScore}%"></span>
             </div>
@@ -4430,22 +4459,34 @@ function renderHistory() {
   elements.historyList.innerHTML = filteredHistory
     .map(
       (entry) => `
-        <article class="history-item">
-          <header>
-            <div class="history-title-block">
+        <article class="history-item history-item--${escapeHtml(entry.statusKind)}">
+          <div class="history-item__marker" aria-hidden="true">${escapeHtml(getHistoryStatusMonogram(entry.statusKind))}</div>
+          <div class="history-item__body">
+            <header>
+              <div class="history-title-block">
               <strong>${escapeHtml(entry.name)}</strong>
               <span class="history-badge history-badge--${escapeHtml(entry.statusKind)}">${escapeHtml(entry.statusLabel)}</span>
-            </div>
-            <span class="history-score">${entry.confidence}%</span>
-          </header>
-          <div class="history-meta">${escapeHtml(entry.meta)}</div>
-          <div class="history-time">${escapeHtml(entry.timeLabel)}</div>
+              </div>
+              <span class="history-score">${entry.confidence}%</span>
+            </header>
+            <div class="history-meta">${escapeHtml(entry.meta)}</div>
+            <div class="history-time">${escapeHtml(entry.timeLabel)}</div>
+          </div>
         </article>
       `,
     )
     .join("");
 
   refreshHeaderStats();
+}
+
+function getHistoryStatusMonogram(statusKind) {
+  return {
+    confirmed: "C",
+    probable: "P",
+    ambiguous: "A",
+    inconclusive: "N",
+  }[statusKind] || "H";
 }
 
 function getFilteredHistoryEntries() {
@@ -4864,6 +4905,33 @@ function updateResult({ name, meta, confidence, matches, analysis, verdictKind =
   renderMatches(matches);
   state.lastResult = { name, meta, confidence, matches, analysis, verdictKind };
   renderVerdictContext(state.lastResult);
+  refreshVerdictMotion(verdictKind);
+}
+
+function refreshVerdictMotion(verdictKind) {
+  if (!elements.resultState) {
+    return;
+  }
+
+  elements.resultState.classList.remove(
+    "is-verdict-confirmed",
+    "is-verdict-probable",
+    "is-verdict-ambiguous",
+    "is-verdict-animate",
+  );
+
+  if (verdictKind === "confirmed") {
+    elements.resultState.classList.add("is-verdict-confirmed");
+  } else if (verdictKind === "probable") {
+    elements.resultState.classList.add("is-verdict-probable");
+  } else if (verdictKind === "ambiguous") {
+    elements.resultState.classList.add("is-verdict-ambiguous");
+  } else {
+    return;
+  }
+
+  void elements.resultState.offsetWidth;
+  elements.resultState.classList.add("is-verdict-animate");
 }
 
 function formatMatchMeta(match, analysis) {
