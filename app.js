@@ -230,6 +230,7 @@ const elements = {
   referenceCount: document.querySelector("#referenceCount"),
   historyCount: document.querySelector("#historyCount"),
   modeLabel: document.querySelector("#modeLabel"),
+  heroListenShortcut: document.querySelector("#heroListenShortcut"),
   modeStatusBadge: document.querySelector("#modeStatusBadge"),
   modeToggleButton: document.querySelector("#modeToggleButton"),
   capturedTempo: document.querySelector("#capturedTempo"),
@@ -1110,6 +1111,11 @@ function syncSettingsUi() {
   elements.minimumConfidenceValue.textContent = `${state.settings.minimumConfidence}%`;
   elements.analysisMode.value = state.settings.analysisMode;
   elements.modeLabel.textContent = mode.label;
+  if (elements.heroListenShortcut) {
+    elements.heroListenShortcut.textContent = mode.label;
+    elements.heroListenShortcut.setAttribute("aria-label", `Ir a la escucha (${mode.label})`);
+    elements.heroListenShortcut.title = `Ir a la escucha con el perfil ${mode.label}`;
+  }
   elements.listenHint.textContent = `${state.settings.captureSeconds} segundos`;
   if (elements.listenTimer) {
     elements.listenTimer.hidden = true;
