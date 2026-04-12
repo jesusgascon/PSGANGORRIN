@@ -494,8 +494,8 @@
           <div class="project-meta-banner" aria-label="Información del proyecto">
             <div class="project-meta-banner__copy">
               <span class="project-meta-banner__kicker">Proyecto abierto</span>
-              <strong id="projectReleaseUser">Release</strong>
-              <span id="projectLicenseUser">Licencia</span>
+              <strong id="projectReleaseUser">Release v1.2.0</strong>
+              <span id="projectLicenseUser">Código bajo licencia MIT</span>
               <small>El código usa licencia libre. Los audios pueden requerir permisos aparte.</small>
             </div>
             <div class="project-meta-banner__actions">
@@ -544,9 +544,9 @@
           <div class="project-meta-panel" aria-label="Estado del proyecto">
             <div class="project-meta-panel__head">
               <span class="eyebrow">Proyecto</span>
-              <strong id="projectReleaseAdmin">Release</strong>
+              <strong id="projectReleaseAdmin">Release v1.2.0</strong>
             </div>
-            <p id="projectLicenseAdmin" class="project-meta-panel__text">Licencia</p>
+            <p id="projectLicenseAdmin" class="project-meta-panel__text">Código bajo licencia MIT</p>
             <div class="project-meta-panel__actions">
               <button
                 id="projectReleaseLinkAdmin"
@@ -595,7 +595,7 @@ python3 ./scripts/serve_https.py --host 0.0.0.0 --port 8443</code></pre>
       </main>
 
       <nav class="bottom-nav user-mode-section" aria-label="Navegación rápida">
-        <button class="bottom-nav__item" type="button" data-nav-target="detect">
+        <button class="bottom-nav__item is-active" type="button" data-nav-target="detect" aria-current="page">
           <span class="bottom-nav__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
               <path d="M4 11.5L12 5l8 6.5" />
@@ -604,7 +604,7 @@ python3 ./scripts/serve_https.py --host 0.0.0.0 --port 8443</code></pre>
           </span>
           <span>Inicio</span>
         </button>
-        <button class="bottom-nav__item bottom-nav__item--primary" type="button" data-nav-target="listen">
+        <button class="bottom-nav__item bottom-nav__item--primary" type="button" data-nav-target="listen" aria-current="false">
           <span class="bottom-nav__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
               <circle cx="12" cy="12" r="7" />
@@ -613,7 +613,7 @@ python3 ./scripts/serve_https.py --host 0.0.0.0 --port 8443</code></pre>
           </span>
           <span>Escuchar</span>
         </button>
-        <button class="bottom-nav__item" type="button" data-nav-target="result">
+        <button class="bottom-nav__item" type="button" data-nav-target="result" aria-current="false">
           <span class="bottom-nav__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
               <path d="M6 12h2.5l2-4 3 8 2-4H18" />
@@ -622,7 +622,7 @@ python3 ./scripts/serve_https.py --host 0.0.0.0 --port 8443</code></pre>
           </span>
           <span>Resultado</span>
         </button>
-        <button class="bottom-nav__item" type="button" data-nav-target="controls">
+        <button class="bottom-nav__item" type="button" data-nav-target="controls" aria-current="false">
           <span class="bottom-nav__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
               <path d="M5 7h14" />
@@ -632,7 +632,7 @@ python3 ./scripts/serve_https.py --host 0.0.0.0 --port 8443</code></pre>
           </span>
           <span>Ajustes</span>
         </button>
-        <button class="bottom-nav__item" type="button" data-nav-target="history">
+        <button class="bottom-nav__item" type="button" data-nav-target="history" aria-current="false">
           <span class="bottom-nav__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
               <path d="M6 4.5h9.5l3 3V19.5H6z" />
@@ -646,7 +646,7 @@ python3 ./scripts/serve_https.py --host 0.0.0.0 --port 8443</code></pre>
       </nav>
 
       <nav class="bottom-nav bottom-nav--admin admin-mode-section" aria-label="Acciones de mantenimiento">
-        <button class="bottom-nav__item" type="button" data-nav-target="admin-panel">
+        <button class="bottom-nav__item is-active" type="button" data-nav-target="admin-panel" aria-current="page">
           <span class="bottom-nav__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
               <rect x="5" y="5" width="14" height="14" rx="3" />
@@ -656,7 +656,7 @@ python3 ./scripts/serve_https.py --host 0.0.0.0 --port 8443</code></pre>
           </span>
           <span>Panel</span>
         </button>
-        <button class="bottom-nav__item" type="button" data-nav-target="admin-search">
+        <button class="bottom-nav__item" type="button" data-nav-target="admin-search" aria-current="false">
           <span class="bottom-nav__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
               <circle cx="11" cy="11" r="5.5" />
@@ -665,7 +665,7 @@ python3 ./scripts/serve_https.py --host 0.0.0.0 --port 8443</code></pre>
           </span>
           <span>Buscar</span>
         </button>
-        <button class="bottom-nav__item bottom-nav__item--primary bottom-nav__item--admin" type="button" data-nav-target="admin-upload">
+        <button class="bottom-nav__item bottom-nav__item--primary bottom-nav__item--admin" type="button" data-nav-target="admin-upload" aria-current="false">
           <span class="bottom-nav__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
               <path d="M12 6v12" />
@@ -674,7 +674,7 @@ python3 ./scripts/serve_https.py --host 0.0.0.0 --port 8443</code></pre>
           </span>
           <span>Subir</span>
         </button>
-        <button class="bottom-nav__item" type="button" data-nav-target="admin-library">
+        <button class="bottom-nav__item" type="button" data-nav-target="admin-library" aria-current="false">
           <span class="bottom-nav__icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
               <rect x="5" y="5" width="5" height="5" rx="1.5" />
