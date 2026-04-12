@@ -24,6 +24,12 @@
   - guardado de estados `Confirmado`, `Probable`, `Ambiguo` y `No fiable`
 - Tiempo de escucha ampliado hasta `30 s` con contador visual de transcurrido y restante.
 - Documentacion consolidada y licencia MIT explicita.
+- Archivos de comunidad para GitHub:
+  - `CONTRIBUTING.md`
+  - `CODE_OF_CONDUCT.md`
+  - `SECURITY.md`
+  - `SUPPORT.md`
+  - plantillas de issue y pull request en `.github/`
 
 ## v1.1.0
 

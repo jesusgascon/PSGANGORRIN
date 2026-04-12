@@ -1,5 +1,9 @@
 # CofraBeat
 
+[![Release](https://img.shields.io/github/v/release/jesusgascon/PSGANGORRIN)](https://github.com/jesusgascon/PSGANGORRIN/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Status](https://img.shields.io/badge/status-stable-blue.svg)](CHANGELOG.md)
+
 Aplicacion web mobile-first para detectar toques de tambor de Semana Santa a partir del microfono del movil u ordenador. CofraBeat compara una escucha corta contra una biblioteca comun de audios `mp3`, muestra el mejor candidato y evita confirmar coincidencias debiles cuando la evidencia no es suficiente.
 
 ## Estado Del Proyecto
@@ -237,6 +241,18 @@ python3 scripts/report_field_dataset.py --mode field
 - [docs/VALIDATION.md](/home/jesus/Documentos/Codex/PSGANGORRIN/docs/VALIDATION.md)
 - [docs/CALIBRATION.md](/home/jesus/Documentos/Codex/PSGANGORRIN/docs/CALIBRATION.md)
 - [docs/AUDIT.md](/home/jesus/Documentos/Codex/PSGANGORRIN/docs/AUDIT.md)
+
+## Comunidad Del Repositorio
+
+- [CONTRIBUTING.md](/home/jesus/Documentos/Codex/PSGANGORRIN/CONTRIBUTING.md)
+- [CODE_OF_CONDUCT.md](/home/jesus/Documentos/Codex/PSGANGORRIN/CODE_OF_CONDUCT.md)
+- [SECURITY.md](/home/jesus/Documentos/Codex/PSGANGORRIN/SECURITY.md)
+- [SUPPORT.md](/home/jesus/Documentos/Codex/PSGANGORRIN/SUPPORT.md)
+
+GitHub usará automáticamente:
+
+- plantillas de issue en `.github/ISSUE_TEMPLATE/`
+- plantilla de pull request en `.github/PULL_REQUEST_TEMPLATE.md`
 
 ## Licencia
 
