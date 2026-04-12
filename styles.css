@@ -1352,6 +1352,10 @@ input:disabled {
   margin-bottom: 14px;
 }
 
+.result-card > .action-row {
+  margin-top: 14px;
+}
+
 .verdict-context {
   display: grid;
   gap: 8px;
@@ -3895,6 +3899,10 @@ code {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     align-items: stretch;
+  }
+
+  .result-card > .action-row {
+    margin-top: 20px;
   }
 
   .match-name {
