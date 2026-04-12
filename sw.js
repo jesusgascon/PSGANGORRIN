@@ -1,8 +1,12 @@
-const CACHE_NAME = "cofrabeat-v14";
+importScripts("./version.js");
+
+const APP_VERSION = self.__COFRABEAT_VERSION__ || "dev";
+const CACHE_NAME = `cofrabeat-${APP_VERSION.replace(/[^a-z0-9._-]+/gi, "-").toLowerCase()}`;
 const APP_ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
+  "./version.js",
   "./app.js",
   "./audio-recorder-worklet.js",
   "./manifest.webmanifest",
@@ -15,6 +19,7 @@ const NETWORK_FIRST_PATHS = new Set([
   "",
   "index.html",
   "styles.css",
+  "version.js",
   "app.js",
   "audio-recorder-worklet.js",
   "manifest.webmanifest",
