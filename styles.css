@@ -2608,10 +2608,17 @@ input:disabled {
 
 .bottom-nav__item span:last-child {
   font-size: 0.7rem;
+  font-weight: 700;
   letter-spacing: 0.02em;
   line-height: 1.1;
   text-align: center;
   overflow-wrap: anywhere;
+}
+
+.bottom-nav.admin-mode-section .bottom-nav__item span:last-child {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .bottom-nav__item:disabled {
@@ -3193,6 +3200,12 @@ code {
 
   .bottom-nav__item span:last-child {
     font-size: 0.65rem;
+    font-weight: 700;
+  }
+
+  .bottom-nav.admin-mode-section .bottom-nav__item span:last-child {
+    font-size: 0.65rem;
+    font-weight: 700;
   }
 
   .mode-admin .layout {

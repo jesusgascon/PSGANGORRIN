@@ -4372,12 +4372,12 @@ function renderMatches(matches) {
     return;
   }
 
-  const topVisibleConfidence = Math.max(1, matches[0]?.displayConfidence ?? matches[0]?.confidence ?? 1);
   elements.matchesList.innerHTML = matches
     .map((match, index) => {
       const visibleConfidence = match.displayConfidence ?? match.confidence;
       const isWeak = match.confidence < state.settings.minimumConfidence;
-      const relativeScore = clamp(Math.round((visibleConfidence / topVisibleConfidence) * 100), 8, 100);
+      const confidenceScore = clamp(Math.round(visibleConfidence), 4, 100);
+      const topVisibleConfidence = Math.max(1, matches[0]?.displayConfidence ?? matches[0]?.confidence ?? 1);
       const diagnostics = match.diagnostics || {};
       const patternValue = Math.round((diagnostics.patternScore || 0) * 100);
       const timbreValue = Math.round((diagnostics.timbreScore || 0) * 100);
@@ -4399,7 +4399,7 @@ function renderMatches(matches) {
               <span class="match-metric-chip"><strong>${landmarkValue}%</strong><small>Landmarks</small></span>
             </div>
             <div class="match-meter" aria-hidden="true">
-              <span class="match-meter__fill" style="width:${relativeScore}%"></span>
+              <span class="match-meter__fill" style="width:${confidenceScore}%"></span>
             </div>
             <div class="match-caption">${escapeHtml(leadDelta)}</div>
           </div>

@@ -2,6 +2,12 @@
 
 ## En desarrollo
 
+- Ajustes finales de coherencia visual y de estado:
+  - el ranking de coincidencias ahora usa barras de confianza real, no relativas al primer candidato
+  - accesos rapidos del heroe convertidos en acciones reales y sincronizados con el perfil activo
+  - textos iniciales de `Release`, `Licencia`, `Modo` y veredicto alineados con el estado real desde el primer render
+  - tipografia del menu movil de administracion igualada al menu de usuario
+  - correccion del ajuste tipografico del overlay de analisis
 - Pulido responsive de overlays y navegacion rapida:
   - acceso directo a `Historial` en la barra inferior de usuario
   - overlays mas compactos en pantallas bajas
