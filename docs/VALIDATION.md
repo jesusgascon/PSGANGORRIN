@@ -1,222 +1,95 @@
 # Validacion De Deteccion
 
-Este documento explica como comprobar que la biblioteca, la calibracion y el detector tienen sentido antes de probar con el microfono.
+Este documento describe como validar CofraBeat antes y despues de tocar biblioteca, umbrales o UI de deteccion.
 
-## Objetivo
+## Tipos De Validacion
 
-La prueba simula una escucha usando un fragmento de un MP3 que ya esta en la biblioteca.
+### 1. Validacion Simulada
 
-Si todo esta bien, la app deberia detectar como mejor resultado el mismo archivo del que salio el fragmento.
-
-## Comandos
-
-Validar un toque aleatorio:
-
-```bash
-python3 scripts/validate_detection.py
-```
-
-Validar toda la biblioteca:
+Usa fragmentos sacados de la propia biblioteca.
 
 ```bash
 python3 scripts/validate_detection.py --all
 ```
 
-Validar un archivo concreto:
+### 2. Analisis De Capturas Reales
 
-```bash
-python3 scripts/validate_detection.py --file "Prendimiento - Gritos.mp3"
-```
-
-Validar sin regenerar archivos antes:
-
-```bash
-python3 scripts/validate_detection.py --all --skip-regenerate
-```
-
-Hacer 5 ensayos aleatorios con trozos de 4 a 8 segundos:
-
-```bash
-python3 scripts/validate_detection.py --runs 5 --min-seconds 4 --max-seconds 8 --active-segments --require-usable
-```
-
-Ensayar el perfil recomendado para micro real:
-
-```bash
-python3 scripts/validate_detection.py --runs 400 --min-seconds 4 --max-seconds 12 --active-segments --require-usable --skip-regenerate --mode field
-```
-
-La app web tambien analiza varias ventanas activas dentro de cada escucha real. Por eso, si una grabacion de microfono incluye silencio al principio o eco al final, puede detectar usando solo el tramo mas util.
-
-La biblioteca guarda segmentos fuertes por cada MP3 dentro de `assets/pasos/features.json`. Durante la validacion, cada captura se compara contra la referencia completa y contra esos segmentos. Esto se parece mas a una escucha real, donde solo entra por el microfono una parte del toque.
-
-Ahora esos segmentos fuertes incluyen un factor de distintividad frente al resto de toques. Ademas, la validacion ya incorpora la nueva huella espectral ligera, con perfil por bandas y flujo espectral, para acercarse mas a una escucha por micro real.
-
-Hacer una prueba cruda totalmente aleatoria, incluyendo posibles silencios o partes sin golpes:
-
-```bash
-python3 scripts/validate_detection.py --runs 5 --min-seconds 4 --max-seconds 8 --random-segments
-```
-
-Analizar grabaciones reales ya capturadas desde microfono o monitor:
+Analiza `wav` o `mp3` grabados desde micro o monitor.
 
 ```bash
 python3 scripts/analyze_capture.py /tmp/cofrabeat-mic-tests/*.wav --mode field
 ```
 
-Registrar una de esas capturas dentro del dataset real del proyecto:
+### 3. Dataset De Campo
+
+Registra capturas reales y obtiene un resumen consolidado:
 
 ```bash
-python3 scripts/register_field_capture.py /tmp/cofrabeat-mic-tests/03-formacion.wav \
-  --expected-file "Prendimiento - Formación.mp3" \
+python3 scripts/register_field_capture.py /tmp/cofrabeat-mic-tests/mi-captura.wav \
+  --expected-file "Prendimiento - Yenka.mp3" \
   --source mic \
   --device "webcam-c920" \
-  --notes "salon, altavoz frontal, volumen 85"
-```
+  --notes "prueba de campo"
 
-Y resumir luego todo el dataset real:
-
-```bash
 python3 scripts/report_field_dataset.py --mode field
 ```
 
-Este comando usa la misma logica de tramos activos que la app web y muestra si la captura es usable, el ranking y si el resultado queda confirmado o ambiguo.
+## Comandos Utiles
 
-El analisis de capturas reales tambien aplica la misma limpieza suave que la app: centra la senal y atenúa ruido bajo entre golpes, sin amplificar artificialmente capturas debiles.
+Validar una referencia concreta:
 
-En modo `field`, el ranking incluye detalle de patron, timbre, ritmo, envolvente, intervalos, similitud espectral, flujo espectral, penalizacion de micro y si la coincidencia viene de la referencia completa o de un segmento fuerte.
-
-Tambien muestra:
-
-- `dominio`: cuanto domina el patron general frente al voto bruto de fingerprint
-- `bonus`: bonificacion extra si el candidato lidera a la vez en patron, envolvente y espectro
-- `perfil`: `lento` o `normal`, para saber si se ha activado el ajuste especial de toques lentos
-
-## Como Leer El Resultado
-
-Salida correcta:
-
-```text
-Referencias validadas: 20
-Confirmadas correctas: 20
-Ambiguas no confirmadas: 0
-Correctas por debajo del umbral: 0
-Confusiones reales: 0
-Capturas no usables: 0
+```bash
+python3 scripts/validate_detection.py --file "Prendimiento - Gritos.mp3"
 ```
 
-Cada bloque muestra:
+Ensayo aleatorio usable:
 
-- el toque esperado
-- la mejor coincidencia encontrada
-- el porcentaje de confianza
-- la evidencia interna
-- el ranking de alternativas
-
-El validador separa los casos no confirmados. Si el segundo candidato queda dentro del margen de ambiguedad, incluso justo en el limite, no se confirma un ganador:
-
-- `OK`: la app confirmaria el toque correcto.
-- `PROBABLE`: el toque correcto queda primero con evidencia fuerte, pero aun no llega a confirmacion completa.
-- `PROBABLE AMBIGUO`: el toque correcto queda primero, pero sigue demasiado cerca de otro candidato fuerte.
-- `AMBIGUO`: hay dos toques muy cercanos; la app no debe confirmar ninguno.
-- `BAJO`: el toque correcto sale primero, pero por debajo del umbral.
-- `FALLO`: la app confirmaria un toque incorrecto.
-- `NO USABLE`: el fragmento no tiene calidad suficiente para detectar.
-
-## Que Significa Un Fallo
-
-Un fallo puede indicar:
-
-- El toque es demasiado lento para la ventana de escucha.
-- Hay pocos golpes claros en el fragmento.
-- El audio tiene ruido, silencios o mezcla complicada.
-- Los umbrales de `calibration.json` son demasiado estrictos.
-- Dos toques son ritmicamente muy parecidos.
-
-No significa automaticamente que la app este rota. Significa que ese caso necesita revision.
-
-Si el fallo aparece como `Captura no usable`, normalmente significa que el trozo elegido no tenia suficientes golpes. En ese caso el detector esta haciendo lo correcto: no inventa una coincidencia.
-
-Para medir la identificacion de toques reales, usa `--active-segments --require-usable`.
-
-Para medir que pasa si el usuario graba silencios, pausas o partes pobres, usa `--random-segments`.
-
-## Resultado Actual
-
-Con la biblioteca actual, la validacion completa pasa:
-
-```text
-Referencias validadas: 20
-Confirmadas correctas: 20
-Ambiguas no confirmadas: 0
-Correctas por debajo del umbral: 0
-Confusiones reales: 0
-Capturas no usables: 0
+```bash
+python3 scripts/validate_detection.py --runs 20 --min-seconds 4 --max-seconds 12 --active-segments --require-usable --mode field
 ```
 
-Esto confirma que, usando fragmentos simulados de 6 segundos, cada toque se reconoce a si mismo como mejor coincidencia.
+Ensayo de estres:
 
-Ensayo aleatorio usable de 20 pruebas:
-
-```text
-Referencias validadas: 20
-Confirmadas correctas: 20
-Ambiguas no confirmadas: 0
-Correctas por debajo del umbral: 0
-Confusiones reales: 0
-Capturas no usables: 0
+```bash
+python3 scripts/validate_detection.py --runs 400 --min-seconds 4 --max-seconds 12 --active-segments --require-usable --skip-regenerate --mode field
 ```
 
-Ese ensayo usa fragmentos aleatorios entre 4 y 8 segundos, evitando partes sin golpes suficientes.
+## Interpretacion De Estados
 
-Ensayo de estres de 400 pruebas con fragmentos activos de 4 a 12 segundos:
+- `OK CONFIRMADO`: el detector confirmaria el toque esperado
+- `OK NO CONFIRMADO`: el toque esperado queda primero, pero sin fuerza suficiente para confirmar
+- `PROBABLE`: primer candidato fuerte, pero aun no confirmado
+- `PROBABLE AMBIGUO`: primer candidato util, con segundo candidato demasiado cercano
+- `AMBIGUO`: la escucha no permite decidir con seguridad
+- `FALLO REAL`: se iria a un toque incorrecto
+- `NO USABLE`: la captura no tiene calidad suficiente para competir
 
-```text
-Referencias validadas: 400
-Confirmadas correctas: 351
-Ambiguas no confirmadas: 49
-Correctas por debajo del umbral: 0
-Confusiones reales: 0
-Capturas no usables: 0
-```
+## Resultado Consolidado Actual
 
-Este resultado es preferible a confirmar siempre: cuando dos toques quedan demasiado cerca, la app muestra resultado ambiguo y pide repetir la escucha.
-
-Ensayo del perfil `Micro real`:
+Estado actual del dataset de campo:
 
 ```text
-Referencias validadas: 400
-Confirmadas correctas: 297
-Ambiguas no confirmadas: 102
-Correctas por debajo del umbral: 1
-Confusiones reales: 0
-Capturas no usables: 0
-```
-
-El perfil confirma menos casos que el modo rapido, pero mantiene cero confusiones reales en este ensayo y es mas razonable para audio captado por microfono. Las capturas dudosas se clasifican como ambiguas o no fiables para que la app pida repetir en vez de inventar una coincidencia segura.
-
-Tras el ajuste fino del perfil `Micro real`, la validacion dirigida mejora especialmente en toques lentos:
-
-```text
-Dolor de la Madre de Dios, 20 ensayos
-17 confirmadas correctas
-3 ambiguas no confirmadas
-0 confusiones reales
-```
-
-Y en `Formacion` se mantiene el criterio conservador: sigue habiendo bastantes ambiguas, pero no aparecen confusiones reales en el ensayo dirigido.
-
-Dataset real de campo actual:
-
-```text
-OK confirmadas: 18
-Probables: 2
+OK confirmadas: 20
+OK no confirmadas: 3
 Ambiguas: 1
 Fallos reales: 0
 ```
 
-Con este estado, la version puede darse por estable para uso y pruebas reales. El siguiente ciclo de trabajo queda reducido a mejorar la separacion de:
+Esto permite tratar la version actual como estable para uso y pruebas reales.
 
-- `La Corona`
-- `Yenka`
-- `Lenta que no es lenta`
+## Criterio De Calidad
+
+La prioridad no es maximizar confirmaciones a cualquier precio. La prioridad es:
+
+1. no confirmar toques incorrectos
+2. mantener `Fallos reales: 0`
+3. reducir poco a poco `OK no confirmadas` y `Ambiguas`
+
+## Flujo Recomendado
+
+1. actualizar o añadir audios
+2. regenerar biblioteca
+3. pasar validacion simulada
+4. hacer capturas reales en `Micro real`
+5. registrar dataset de campo
+6. revisar si el cambio mejora o empeora el resumen

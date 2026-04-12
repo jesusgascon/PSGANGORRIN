@@ -1,116 +1,155 @@
 # Arquitectura De CofraBeat
 
+## Resumen
+
+CofraBeat combina:
+
+- una app web mobile-first
+- una biblioteca comun de audios `mp3`
+- una fase de precalculo en Python
+- un detector en navegador optimizado para escucha real por microfono
+
+La arquitectura separa claramente:
+
+- datos comunes versionados en `assets/pasos`
+- estado local de cada navegador
+- mantenimiento real por servidor local
+- demo estatica en GitHub Pages
+
 ## Flujo Principal
 
-1. El servidor escanea `assets/pasos`.
-2. Genera `manifest.json` con la lista de audios.
-3. Genera `features.json` con huellas ritmicas precomputadas si `ffmpeg` esta disponible.
-4. `scripts/calibrate_detection.py` puede generar `calibration.json` con umbrales ajustados.
-5. La app carga primero `calibration.json` y despues `features.json`.
-6. Si faltan huellas para algun audio, la app decodifica ese `mp3` en el navegador como fallback.
-7. El usuario pulsa `Escuchar`.
-8. La app captura muestras con `AudioWorklet`.
-9. El detector valida si la captura contiene un patron de tambor usable.
-10. Si la captura es usable, compara contra referencias listas.
-11. Solo acepta una deteccion si supera evidencia minima de similitud, fingerprints y confianza.
+1. El servidor local escanea `assets/pasos`.
+2. Genera o actualiza `manifest.json`, `features.json` y `metadata.json`.
+3. `scripts/calibrate_detection.py` puede regenerar `calibration.json`.
+4. La app carga calibracion, manifest y features al arrancar.
+5. El usuario escucha desde el microfono.
+6. La captura pasa por validacion de usabilidad.
+7. Si la captura es usable, se compara contra referencias completas y segmentos fuertes.
+8. La app decide entre:
+   - `Resultado confirmado`
+   - `Probable`
+   - `Probable ambiguo`
+   - `Sin deteccion fiable`
 
-## Modulos
+## Capas Del Sistema
 
-- `index.html`: estructura de interfaz usuario/admin.
-- `styles.css`: sistema visual, responsive, microinteracciones y modo movil.
-- `app.js`: aplicacion principal.
-- `audio-recorder-worklet.js`: captura de audio de baja latencia.
-- `scripts/library_manifest.py`: escaneo de mp3, metadatos y huellas.
-- `scripts/calibrate_detection.py`: analisis de biblioteca y umbrales recomendados.
-- `scripts/serve_app.py`: servidor HTTP, API admin y regeneracion de biblioteca.
-- `scripts/serve_https.py`: servidor HTTPS local.
-- `sw.js`: service worker con cache controlada.
-- `tests/`: tests del generador y saneamiento de metadatos.
+### Frontend
+
+- [index.html](/home/jesus/Documentos/Codex/PSGANGORRIN/index.html): estructura base y zonas usuario/admin
+- [styles.css](/home/jesus/Documentos/Codex/PSGANGORRIN/styles.css): responsive, overlays, navegacion y estados visuales
+- [app.js](/home/jesus/Documentos/Codex/PSGANGORRIN/app.js): captura, deteccion, administracion, persistencia local y UI
+- [audio-recorder-worklet.js](/home/jesus/Documentos/Codex/PSGANGORRIN/audio-recorder-worklet.js): captura continua de audio
+
+### Backend Local
+
+- [scripts/serve_app.py](/home/jesus/Documentos/Codex/PSGANGORRIN/scripts/serve_app.py): servidor HTTP, login admin y escritura real
+- [scripts/serve_https.py](/home/jesus/Documentos/Codex/PSGANGORRIN/scripts/serve_https.py): servidor HTTPS para pruebas reales con movil
+
+### Generacion De Biblioteca
+
+- [scripts/library_manifest.py](/home/jesus/Documentos/Codex/PSGANGORRIN/scripts/library_manifest.py): metadatos, huellas y segmentos fuertes
+- [scripts/calibrate_detection.py](/home/jesus/Documentos/Codex/PSGANGORRIN/scripts/calibrate_detection.py): umbrales recomendados para la biblioteca actual
+
+### Validacion Y Campo
+
+- [scripts/validate_detection.py](/home/jesus/Documentos/Codex/PSGANGORRIN/scripts/validate_detection.py): validacion simulada
+- [scripts/analyze_capture.py](/home/jesus/Documentos/Codex/PSGANGORRIN/scripts/analyze_capture.py): analisis de capturas reales
+- [scripts/register_field_capture.py](/home/jesus/Documentos/Codex/PSGANGORRIN/scripts/register_field_capture.py): registro del dataset de campo
+- [scripts/report_field_dataset.py](/home/jesus/Documentos/Codex/PSGANGORRIN/scripts/report_field_dataset.py): resumen del dataset real
 
 ## Estado Y Persistencia
 
-- `localStorage`: ajustes, historial y ultimo modo de UI.
-- `IndexedDB`: audios subidos localmente desde el navegador.
-- `assets/pasos/manifest.json`: biblioteca comun generada.
-- `assets/pasos/features.json`: huellas comunes generadas.
-- `assets/pasos/calibration.json`: umbrales generados para la biblioteca comun.
-- `assets/pasos/metadata.json`: nombres, etiquetas y notas globales.
+Versionado en repo:
 
-## Modo GitHub Pages
+- `assets/pasos/manifest.json`
+- `assets/pasos/features.json`
+- `assets/pasos/calibration.json`
+- `assets/pasos/metadata.json`
+- `data/field-dataset/manifest.json`
 
-GitHub Pages es estatico. No ejecuta `scripts/serve_app.py` ni expone `/api/admin/*`.
+Persistencia local del navegador:
 
-Por decision de producto, en `*.github.io` la zona de administracion se muestra como demo publica sin contrasena. En ese modo:
+- `localStorage`: modo, historial, ajustes y preferencias
+- `IndexedDB`: audios subidos localmente y cambios no globales en modo demo
 
-- no existe sesion admin real
-- los cambios de fichas se guardan solo en `IndexedDB`
-- no se puede escribir `assets/pasos/metadata.json`
-- no se puede regenerar la biblioteca comun
+## Modos De Ejecucion
 
-La administracion real sigue siendo local o de servidor propio mediante `scripts/serve_app.py`.
+### GitHub Pages
+
+Modo estatico:
+
+- sin Python
+- sin escritura global
+- sin regeneracion de biblioteca
+- administracion visible solo como demo
+
+### Servidor Local
+
+Modo completo:
+
+- administracion real
+- guardado global de metadatos
+- regeneracion de biblioteca
+- flujo recomendado para mantenimiento
 
 ## Detector
 
-El detector se divide en tres fases:
+El detector combina varias familias de evidencia:
 
-1. Extraccion:
-   - mezcla mono
-   - normalizacion
-   - envolvente
-   - onset profile
-   - picos ritmicos
-   - intervalos
-   - fingerprints
+- energia y calidad de señal
+- onsets, picos y estabilidad ritmica
+- fingerprints por intervalos
+- similitud de ritmo y envolvente
+- landmarks espectrales ligeros
+- comparacion contra referencia completa y segmentos fuertes
 
-2. Rechazo de captura:
-   - RMS minimo
-   - pico minimo
-   - golpes minimos
-   - tasa de golpes
-   - contraste de onsets
-   - estabilidad ritmica
-   - numero de fingerprints
-   - calidad de senal
+La decision final es conservadora:
 
-3. Aceptacion de coincidencia:
-   - confianza minima
-   - similitud absoluta
-   - evidencia ponderada
-   - votos de fingerprints
-   - similitud de ritmo o fingerprint
+- primero decide si la captura es usable
+- luego decide si el mejor candidato domina lo suficiente
+- si no domina, devuelve `Probable` o `Probable ambiguo` en lugar de confirmar de forma agresiva
 
-Si una captura no supera las fases 2 o 3, se muestra `Sin toque detectable` o `Sin deteccion fiable`.
+## UI Y Experiencia
+
+La interfaz se divide en:
+
+- modo usuario
+- modo administracion
+- overlay de carga inicial
+- overlay de analisis al terminar la escucha
+- bloqueo visual y funcional mientras la app escucha o analiza
+
+Se ha trabajado especificamente:
+
+- responsive movil
+- `safe-area` para dispositivos con notch
+- accesibilidad visual de overlays y progreso
+- navegacion rapida inferior para usuario y admin
 
 ## Reglas De Mantenimiento
 
-- No guardar la contrasena de administracion en `app.js`.
-- No volver a `window.alert()` para errores de UI; usar toast/modal integrado.
-- Mantener GitHub Pages como demo estatica sin guardado global.
-- No cachear agresivamente `manifest.json` ni `features.json`.
-- Regenerar `calibration.json` despues de cambiar mucho la biblioteca de audios.
-- Mantener fallback si `features.json` falla.
-- Probar siempre silencio, ruido y toque real despues de tocar el detector.
-- Mantener botones y controles con tamano suficiente para movil.
-- Subir `assets/pasos/metadata.json` junto con los mp3 si la biblioteca comun cambia.
+- no exponer credenciales en frontend
+- no usar `alert()` o `prompt()` nativos para flujos normales de UI
+- no ensuciar `features.json` con tests
+- no confirmar un toque si la evidencia es insuficiente
+- recalibrar despues de cambios importantes en la biblioteca
+- validar siempre:
+  - simulacion
+  - capturas reales
+  - responsive visual basico
 
-## Validacion Minima
+## Validacion Minima Recomendada
 
 ```bash
 node --check app.js
 node --check sw.js
 node --check audio-recorder-worklet.js
-python3 -m py_compile scripts/library_manifest.py scripts/calibrate_detection.py scripts/serve_app.py scripts/serve_https.py tests/test_library_manifest.py tests/test_detection_calibration.py tests/run_tests.py
-python3 scripts/calibrate_detection.py
+python3 -m py_compile scripts/library_manifest.py scripts/calibrate_detection.py scripts/serve_app.py scripts/serve_https.py scripts/validate_detection.py scripts/analyze_capture.py scripts/register_field_capture.py scripts/report_field_dataset.py tests/test_library_manifest.py tests/test_detection_calibration.py tests/test_detection_outcomes.py tests/run_tests.py
 python3 tests/run_tests.py
 ```
 
-## Separacion Recomendada A Futuro
+## Limites Conocidos
 
-Cuando el comportamiento este estabilizado, dividir `app.js` en:
-
-- `state.js`
-- `storage.js`
-- `audio-capture.js`
-- `detector.js`
-- `admin-ui.js`
-- `user-ui.js`
+- la precision depende de la calidad del altavoz, sala y microfono
+- la biblioteca de audios puede tener limitaciones legales independientes del codigo
+- `app.js` sigue siendo grande; modularizarlo seria una mejora futura, no una urgencia de producto

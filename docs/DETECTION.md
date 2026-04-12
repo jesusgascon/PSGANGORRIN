@@ -2,201 +2,106 @@
 
 ## Objetivo
 
-Detectar si una grabacion corta del microfono contiene un toque de tambor conocido y evitar falsos positivos cuando solo hay ruido, silencio o audio no ritmico.
+Detectar si una escucha corta contiene un toque conocido sin inventar coincidencias cuando la señal es ruido, silencio o evidencia insuficiente.
 
-## Referencias Tecnicas
+## Enfoque
 
-El enfoque toma ideas de sistemas de audio fingerprinting y deteccion de onsets:
+El detector mezcla ideas de:
 
-- Shazam/Avery Wang: fingerprints robustos y votos coherentes por alineacion temporal.
-- AUDFPRINT/Dan Ellis: landmarks/fingerprints y busqueda por offsets.
-- Librosa onset detection: fuerza de onset y seleccion de picos.
-- Web Audio API: captura con `AudioWorklet` en vez de `ScriptProcessorNode`.
+- fingerprints de audio por coherencia local
+- comparacion ritmica por golpes e intervalos
+- segmentos fuertes por referencia
+- landmarks espectrales ligeros para reforzar separacion entre toques parecidos
 
-Referencias consultadas:
+No se apoya en un modelo entrenado. Es un sistema heuristico y explicable.
 
-- Avery Wang, `An Industrial-Strength Audio Search Algorithm`: https://zenodo.org/records/1416340
-- Dan Ellis, `Robust Landmark-Based Audio Fingerprinting`: https://www.ee.columbia.edu/~dpwe/resources/matlab/fingerprint/
-- Librosa, `onset_strength`: https://librosa.org/doc/0.10.2/generated/librosa.onset.onset_strength.html
-- MDN, `ScriptProcessorNode` deprecated: https://developer.mozilla.org/en-US/docs/Web/API/ScriptProcessorNode
+## Flujo De Decision
 
-La implementacion de CofraBeat es mas ligera y corre en navegador, pero mantiene la idea clave: no basta con encontrar el candidato mas cercano; debe haber evidencia suficiente.
+1. La app captura audio desde microfono.
+2. Analiza si la señal es usable.
+3. Extrae varias ventanas activas de la captura.
+4. Compara la captura contra:
+   - la referencia completa
+   - segmentos fuertes de 8, 10 y 12 segundos
+5. Agrega evidencia de varias variantes por referencia.
+6. Decide entre:
+   - `Confirmado`
+   - `Probable`
+   - `Probable ambiguo`
+   - `Sin deteccion fiable`
 
-## Perfil Micro Real
+## Señales Que Usa
 
-El perfil `Micro real` esta pensado para pruebas en las que el audio sale por un altavoz y vuelve a entrar por el microfono del movil u ordenador.
-
-Esa cadena no conserva el MP3 limpio: cambia el volumen, mete eco, comprime frecuencias y puede borrar golpes. Por eso el perfil reduce el peso de fingerprints exactos, da mas peso al contorno ritmico y la envolvente, y exige mas evidencia antes de confirmar un toque.
-
-Recomendacion practica:
-
-- usar 10 a 12 segundos de escucha
-- usar volumen medio, sin saturar la entrada
-- separar el microfono del altavoz, normalmente 30-80 cm
-- evitar ruido de sala
-- repetir si la app marca resultado ambiguo
-
-El modo `Micro real` baja el umbral visible para permitir capturas de altavoz, pero compensa con reglas mas estrictas de evidencia, votos ritmicos y separacion entre candidatos. Si dos referencias quedan muy cerca, la app muestra resultado ambiguo.
-
-En `Micro real`, los fingerprints exactos pesan menos que en una comparacion limpia. El audio que sale por un altavoz y vuelve por un microfono puede cambiar transitorios, tempo aparente y frecuencias. Por eso este modo da mas importancia al patron de onsets, envolvente e intervalos, y penaliza candidatos que ganan solo por fingerprints cuando el patron general no acompaña.
-
-Este perfil ahora aplica tambien dos reglas adicionales:
-
-- una bonificacion si el mismo candidato lidera a la vez en patron, envolvente y espectro
-- un perfil lento para toques de tempo bajo, donde el patron general, la envolvente, el timbre y los intervalos pesan mas que el voto bruto de fingerprint
-
-## Tramos Activos De La Captura
-
-La escucha real no siempre empieza justo cuando empieza el toque. Puede haber silencio inicial, eco final, ruido de sala o un golpe aislado antes del patron principal.
-
-Antes de buscar esos tramos, la captura de microfono recibe un preprocesado suave:
-
-- se elimina el desplazamiento DC de la senal
-- se calcula el ruido de fondo aproximado
-- se atenúan muestras muy bajas entre golpes con una puerta de ruido suave
-- no se sube artificialmente el volumen de una captura debil
-
-Esta ultima regla es importante: normalizar a tope cualquier audio haria que ruido bajo pareciera una senal fuerte. CofraBeat normaliza internamente la forma de la envolvente para comparar patrones, pero mantiene las metricas de energia para poder rechazar silencio o ruido.
-
-Para reducir ese problema, CofraBeat no compara solo la grabacion completa. Primero crea varios tramos candidatos:
-
-- grabacion completa
-- tramo activo principal de energia
-- ventanas de 6, 8, 10 y 12 segundos alrededor de la zona mas fuerte
-- pequenas ventanas alrededor de los centros con mas energia
-
-Cada tramo se analiza igual que una captura normal. La app escoge el tramo con mejor mezcla de evidencia, confianza, calidad ritmica y separacion respecto al segundo resultado. Si el tramo elegido no es la grabacion completa, el resultado muestra desde que segundo se ha analizado.
-
-Esta idea sigue el principio de fingerprinting robusto: buscar evidencia local estable y alineada, no obligar a que toda la grabacion sea perfecta.
-
-## Fase 1: Extraccion De Senal
-
-`analyseSignal()` calcula:
-
-- RMS y pico maximo.
-- Envolvente de energia.
-- Perfil de onset.
-- Picos ritmicos.
-- Tiempos de golpes.
-- Histograma de intervalos.
-- Estimacion de tempo.
-- Fingerprints por pares de intervalos.
-- Contraste de onsets.
-- Estabilidad ritmica.
-- Calidad global de senal.
-
-## Fase 2: Rechazo De Captura
-
-`isUsableCapture()` rechaza antes de comparar si no se cumple:
-
-- energia minima
-- pico minimo
-- golpes suficientes
-- tasa minima de golpes
-- fingerprints suficientes
-- contraste de onset suficiente
-- estabilidad ritmica minima
-- calidad global minima
-
-Esto evita que ruido bajo, silencio o audio ambiente pasen a la comparacion.
-
-## Fase 3: Comparacion
-
-`compareAgainstReferences()` calcula para cada referencia:
-
-- similitud de ritmo por subsecuencia
-- similitud de envolvente
-- distancia de intervalos
-- distancia de densidad
-- distancia de tempo
-- votos de fingerprints alineados
-- evidencia ponderada
-- confianza final
-
-Cada MP3 se compara usando su huella global y varios segmentos fuertes guardados en `assets/pasos/features.json`. Esos segmentos son ventanas de 8, 10 y 12 segundos elegidas por energia, golpes, fingerprints y calidad ritmica.
-
-Ahora esos segmentos no se ordenan solo por energia. La biblioteca hace una segunda pasada y prioriza tambien los tramos mas distintivos frente al resto de toques. Asi, un segmento fuerte no es solo un tramo intenso, sino un tramo que ayuda mejor a separar un toque de otro.
-
-Cada referencia guarda tambien una segunda huella espectral ligera:
-
-- perfil espectral por bandas
-- flujo espectral a lo largo del tiempo
-
-Esta segunda huella no sustituye la ritmica, pero ayuda a separar toques parecidos cuando cambia el color del golpe o la evolucion energetica del tramo.
-
-Esto ayuda con capturas reales de microfono, porque el usuario normalmente graba solo una parte concreta del toque. Si un segmento fuerte encaja mejor que el archivo completo, la app usa ese segmento como mejor evidencia para esa referencia.
-
-La confianza se penaliza por calidad de senal y evidencia. Ya no se infla solo porque una referencia sea "la menos mala".
-
-En capturas de microfono, la confianza tambien se penaliza si el candidato tiene votos de fingerprint pero bajo patron global. Esto evita que un toque gane por coincidencias locales fragiles cuando el ritmo completo no encaja.
-
-Ademas, en `Micro real` ya no se elige la mejor variante de una referencia solo por distancia cruda. La variante completa o por segmento se ordena por una puntuacion final de campo, con mas peso en patron general, timbre y coherencia del tramo.
-
-## Fase 4: Aceptacion
-
-`isReliableMatch()` exige:
-
-- confianza minima configurada
-- similitud absoluta minima
-- evidencia minima
-- votos minimos de fingerprint
-- similitud minima ritmica o de fingerprint
-
-Si no se cumple, la app devuelve `Sin deteccion fiable` y no muestra ranking.
-
-## Comportamiento Esperado
-
-- Silencio: `Sin toque detectable`.
-- Ruido ambiente: `Sin toque detectable` o `Sin deteccion fiable`.
-- Audio con golpes sueltos no ritmicos: `Sin deteccion fiable`.
-- Toque real con micro cerca: deteccion si supera evidencia suficiente.
-- Toque real con mucho ruido: no concluyente antes que falso positivo.
-
-## Calibracion Automatica
-
-Los valores por defecto estan en `DEFAULT_DETECTION_LIMITS` dentro de `app.js`, pero la app puede cargar valores ajustados desde:
-
-```text
-assets/pasos/calibration.json
-```
-
-Ese archivo se genera con:
-
-```bash
-python3 scripts/calibrate_detection.py
-```
-
-El script analiza las referencias actuales de `assets/pasos/features.json` y calcula:
-
-- duracion real
 - RMS y pico
+- envolvente
+- perfil de onset
 - golpes detectados
-- golpes por segundo
-- fingerprints ritmicos
-- contraste de onset
+- fingerprints por intervalos
+- tempo estimado
 - estabilidad ritmica
-- calidad global
+- calidad de señal
+- perfil espectral ligero
+- flujo espectral
+- landmarks espectrales
 
-Con esas estadisticas propone variables como:
+## Perfil `Micro real`
 
-- `minSignalRms`
-- `minSignalPeak`
-- `minCapturePeaks`
-- `minSignalQuality`
-- `minOnsetContrast`
-- `minCaptureFingerprints`
-- `minRhythmicStability`
-- `minMatchAbsoluteSimilarity`
-- `minMatchEvidence`
-- `minFingerprintVotes`
-- `minFingerprintSimilarity`
-- `minRhythmSimilarity`
-- `minTopMatchMargin`
+El modo `Micro real` esta diseñado para:
 
-`minTopMatchMargin` evita confirmar un toque cuando el primer y segundo resultado quedan demasiado cerca. Si la diferencia es menor o igual a ese margen, la app muestra resultado ambiguo y pide repetir la escucha.
+- altavoz -> sala -> microfono
+- eco
+- coloracion del altavoz
+- pequeñas deformaciones del ritmo y del timbre
 
-En el perfil `Micro real`, la decision final no usa la misma formula que una comparacion limpia entre archivos. La app reduce el peso de fingerprints exactos, porque el microfono, el altavoz y la sala deforman la huella. En su lugar da mas peso al patron ritmico, la envolvente, los intervalos entre golpes, el perfil espectral y la coherencia general del tramo captado. Si un candidato gana solo por votos de fingerprint pero no por patron o timbre general, se penaliza.
+Por eso:
 
-Tambien se aplica una regla de confirmacion mas prudente: con audio de campo, una coincidencia media no se confirma salvo que tenga patron fuerte o margen claro. Si otro toque queda cerca, el resultado se marca como ambiguo.
+- depende menos del voto bruto de fingerprint exacto
+- depende mas de patron, envolvente, intervalos y timbre
+- es mas conservador al confirmar
 
-Regla practica: si aparecen falsos positivos, subir umbrales de evidencia. Si aparecen demasiados falsos negativos con toques reales claros, bajar ligeramente `minMatchEvidence` o `minRhythmicStability`. Si aparecen confusiones entre dos toques muy parecidos, subir ligeramente `minTopMatchMargin`.
+## Estados De Resultado
+
+### Confirmado
+
+El mejor candidato domina con evidencia suficiente y margen razonable.
+
+### Probable
+
+El mejor candidato es fuerte y util, pero no llega todavia al nivel de confirmacion plena.
+
+### Probable ambiguo
+
+El mejor candidato sigue siendo el mas razonable, pero otro toque queda demasiado cerca como para confirmarlo con seguridad.
+
+### Sin deteccion fiable
+
+La captura no tiene calidad suficiente o no existe un ganador defendible.
+
+## Segmentos Fuertes
+
+Cada referencia guarda:
+
+- una huella completa
+- varios segmentos fuertes
+
+Esos segmentos no se eligen solo por energia. Tambien se ordenan por distintividad frente al resto de referencias. Esto evita depender de una unica parte del toque.
+
+## Capturas Reales
+
+Antes de comparar, la app hace un preprocesado suave:
+
+- centra la señal
+- estima ruido de fondo
+- atenúa ruido bajo entre golpes
+
+No amplifica artificialmente capturas debiles. La energia sigue sirviendo para rechazar señales pobres.
+
+## Criterio De Diseño
+
+El detector esta deliberadamente sesgado a:
+
+- evitar falsos positivos
+- aceptar `Probable` antes que confirmar mal
+- pedir repetir una escucha cuando dos toques estan demasiado cerca
+
+En este proyecto, una ambigüedad razonable es preferible a una confirmacion incorrecta.

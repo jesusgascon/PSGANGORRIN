@@ -2,62 +2,51 @@
 
 ## En desarrollo
 
-- La deteccion `field` queda estabilizada con biblioteca `schemaVersion 5`, landmarks espectrales locales, agregacion multi-variante por referencia y ranking coherente entre app web y scripts CLI.
-- El dataset real de campo queda sin fallos reales en la tanda actual: `18 OK confirmadas`, `2 Probables`, `1 Probable ambigua`, `0 fallos reales`.
-- `Zaragoza` deja de ser un caso roto en micro real: en las pruebas nuevas queda siempre primero y pasa a estados `OK confirmado`, `OK no confirmado` o `ambiguo`, segun la calidad de la captura.
-- El siguiente ciclo queda acotado a afinado fino de tres toques conflictivos: `La Corona`, `Yenka` y `Lenta que no es lenta`.
-- Ajuste visual de la barra inferior del modo usuario en movil para evitar botones cortados o desalineados.
-- El boton Escuchar de la barra inferior queda alineado tambien al terminar la escucha.
-- Cache publica actualizada para que GitHub Pages entregue estilos nuevos tambien bajo la ruta `/PSGANGORRIN/`.
-- Deteccion mas prudente: si dos toques quedan demasiado cerca, se muestra resultado ambiguo en vez de confirmar uno.
-- Perfil `Micro real` para pruebas con altavoz y microfono, escucha por defecto de 8 segundos y titulo principal mas compacto en movil.
-- Perfil `Micro real` reforzado: escucha por defecto de 10 segundos, umbral visible mas realista, ranking ordenado por confianza final y avisos de senal baja, saturacion o captura ambigua.
-- Analisis por tramos activos dentro de la captura para mejorar escuchas reales con silencio, eco o ruido de sala.
-- Nuevo script `scripts/analyze_capture.py` para analizar WAV/MP3 reales grabados con microfono o monitor del sistema.
-- Preprocesado suave de capturas reales: centrado DC y puerta de ruido ligera sin amplificar ruido debil.
-- Huellas por segmentos fuertes de cada MP3 para comparar capturas reales contra la parte mas representativa de cada toque.
-- Ambiguedad mas estricta: si otro toque queda justo en el margen de seguridad, la app pide repetir en vez de confirmar.
-- Perfil `Micro real` menos dependiente de fingerprints exactos y mas apoyado en patron, envolvente e intervalos.
-- `scripts/analyze_capture.py` muestra detalle de patron, ritmo, envolvente, intervalos, penalizacion de micro y segmento usado.
-- Perfil `Micro real` refinado: la evidencia, seleccion de segmentos y confirmacion final priorizan patron ritmico, envolvente e intervalos; las coincidencias medias quedan como ambiguas o no fiables antes que confirmar un toque incorrecto.
-- Biblioteca refinada con segmentos distintivos por toque y segunda huella espectral ligera; en `Micro real` se usa mas patron+timbre y menos voto bruto de fingerprint.
-- Ajuste fino de `Micro real`: mas peso de timbre, menos dependencia de votos cuando el patron no domina, bonificacion por liderazgo conjunto de patron+envolvente+espectro y perfil especial para toques lentos como `Dolor`.
-- Confianza visible ajustada en `Micro real`: cuando un candidato ya gana claro por patron+timbre, la UI muestra un porcentaje algo mas representativo sin relajar la logica real de confirmacion ni de ambiguedad.
-- Base para dataset real de campo: carpeta `data/field-dataset/`, script para registrar capturas reales y script para resumir ese dataset contra la biblioteca actual.
+- Pulido responsive de overlays y navegacion rapida:
+  - acceso directo a `Historial` en la barra inferior de usuario
+  - overlays mas compactos en pantallas bajas
+  - mejora de `safe-area` superior en el banner local
+  - limpieza de `z-index` y estados visuales globales
+- Ajustes visuales del arranque y del analisis posterior a la escucha:
+  - progreso inicial coherente hasta `100%`
+  - bloqueo real de la interfaz durante la escucha
+  - overlay visual de analisis al terminar la grabacion
+- Tiempo de escucha ampliado hasta `30 s` con contador visual de transcurrido y restante.
+- Documentacion consolidada y licencia MIT explicita.
 
 ## v1.1.0
 
-Version de cierre de la primera fase funcional.
+Base estable del detector `field`.
 
 Incluye:
 
-- Documentacion ampliada del proyecto en `README.md`.
-- Guia de validacion en `docs/VALIDATION.md`.
-- Script `scripts/validate_detection.py` para simular escuchas sin microfono.
-- Ensayos repetidos con fragmentos aleatorios y duracion variable.
-- Modo de ensayo con fragmentos activos y capturas usables.
-- Calibracion ajustada para ventanas reales de escucha.
-- Parada automatica de previas de audio al salir de administracion o cambiar de panel.
+- biblioteca `schemaVersion 5`
+- landmarks espectrales ligeros
+- agregacion multi-variante por referencia
+- ranking coherente entre app web y scripts CLI
+- estado `Probable` y `Probable ambiguo`
+- dataset de campo sin fallos reales en la tanda consolidada:
+  - `20 OK confirmadas`
+  - `3 OK no confirmadas`
+  - `1 Ambigua`
+  - `0 Fallos reales`
 
-Resultado de validacion destacado:
+Tambien incluye:
 
-```text
-40 ensayos simulados
-40 correctos
-0 fallos
-```
+- validacion simulada y analisis de capturas reales
+- scripts para registrar y resumir dataset de campo
+- mejoras de UX en overlays, carga inicial y responsive movil
+- test de generacion de biblioteca aislado para no ensuciar ficheros versionados
 
 ## v1.0.0
 
-Primera version publica de CofraBeat.
+Primera version funcional del proyecto.
 
 Incluye:
 
-- App web mobile-first para detectar toques de tambor de Semana Santa.
-- Modo usuario con escucha, resultados, historial y ajustes.
-- Modo administracion para gestionar la biblioteca de toques.
-- Biblioteca comun de audios en `assets/pasos`.
-- Metadatos globales, etiquetas y nombres visibles.
-- Calibracion automatica de deteccion segun los audios cargados.
-- Servidor local HTTP/HTTPS para pruebas en movil y red local.
-- Documentacion tecnica y validaciones basicas.
+- app web mobile-first para detectar toques de tambor
+- modo usuario con escucha, resultado, historial y ajustes
+- modo administracion para mantener la biblioteca comun
+- biblioteca comun de audios en `assets/pasos`
+- servidor local HTTP y HTTPS
+- generacion de `manifest.json`, `features.json` y `calibration.json`
