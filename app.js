@@ -49,6 +49,9 @@ const FINGERPRINT_MAX_NEIGHBORS = 5;
 const FINGERPRINT_MAX_INTERVAL_SECONDS = 3.2;
 const FINGERPRINT_INTERVAL_STEP = 0.05;
 const FINGERPRINT_OFFSET_STEP = 0.25;
+const APP_RELEASE = "v1.2.0";
+const APP_LICENSE = "MIT";
+const APP_RELEASE_URL = `https://github.com/jesusgascon/PSGANGORRIN/releases/tag/${APP_RELEASE}`;
 const DEFAULT_TAG = "Sin etiqueta";
 const AVAILABLE_TAGS = [
   "Sin etiqueta",
@@ -79,6 +82,12 @@ const DB_STORE_METADATA = "metadata";
 const DECODE_TIMEOUT_MS = 12000;
 const AUDIO_WORKLET_MODULE = "./audio-recorder-worklet.js";
 const GITHUB_PAGES_HOST_SUFFIX = ".github.io";
+const HISTORY_STATUS_LABELS = Object.freeze({
+  confirmed: "Confirmado",
+  probable: "Probable",
+  ambiguous: "Ambiguo",
+  inconclusive: "No fiable",
+});
 
 const MODE_PRESETS = {
   fast: {
@@ -128,6 +137,11 @@ const state = {
     search: "",
     tag: "all",
   },
+  historyFilters: {
+    status: "all",
+    range: "all",
+    query: "",
+  },
   collapsedReferences: new Set(),
   availableTags: [...AVAILABLE_TAGS],
   diagnostics: {
@@ -168,6 +182,7 @@ const elements = {
   analysisMode: document.querySelector("#analysisMode"),
   shareResultButton: document.querySelector("#shareResultButton"),
   repeatResultButton: document.querySelector("#repeatResultButton"),
+  extendListenButton: document.querySelector("#extendListenButton"),
   clearLibraryButton: document.querySelector("#clearLibraryButton"),
   librarySummary: document.querySelector("#librarySummary"),
   adminTotalAudios: document.querySelector("#adminTotalAudios"),
@@ -184,6 +199,14 @@ const elements = {
   localHelpButton: document.querySelector("#localHelpButton"),
   localHelpCard: document.querySelector("#localHelpCard"),
   runtimeInfo: document.querySelector("#runtimeInfo"),
+  projectReleaseUser: document.querySelector("#projectReleaseUser"),
+  projectLicenseUser: document.querySelector("#projectLicenseUser"),
+  projectReleaseLinkUser: document.querySelector("#projectReleaseLinkUser"),
+  projectLicenseLinkUser: document.querySelector("#projectLicenseLinkUser"),
+  projectReleaseAdmin: document.querySelector("#projectReleaseAdmin"),
+  projectLicenseAdmin: document.querySelector("#projectLicenseAdmin"),
+  projectReleaseLinkAdmin: document.querySelector("#projectReleaseLinkAdmin"),
+  projectLicenseLinkAdmin: document.querySelector("#projectLicenseLinkAdmin"),
   userBottomNav: document.querySelector(".bottom-nav.user-mode-section"),
   adminBottomNav: document.querySelector(".bottom-nav--admin"),
   detectSection: document.querySelector("#detectSection"),
@@ -199,6 +222,9 @@ const elements = {
   adminSelectFilesButton: document.querySelector("#adminSelectFilesButton"),
   historyList: document.querySelector("#historyList"),
   clearHistoryButton: document.querySelector("#clearHistoryButton"),
+  historyDateFilter: document.querySelector("#historyDateFilter"),
+  historySearchInput: document.querySelector("#historySearchInput"),
+  historyFilterSummary: document.querySelector("#historyFilterSummary"),
   adminLoginModal: document.querySelector("#adminLoginModal"),
   adminLoginForm: document.querySelector("#adminLoginForm"),
   adminPasswordInput: document.querySelector("#adminPasswordInput"),
@@ -241,6 +267,7 @@ async function boot() {
       progress: 12,
     });
     renderRuntimeInfo();
+    renderProjectMeta();
     loadSavedState();
     await refreshAdminSession();
     bindEvents();
@@ -324,6 +351,33 @@ async function boot() {
   }
 }
 
+function renderProjectMeta() {
+  if (elements.projectReleaseUser) {
+    elements.projectReleaseUser.textContent = `Release ${APP_RELEASE}`;
+  }
+  if (elements.projectLicenseUser) {
+    elements.projectLicenseUser.textContent = `Código bajo licencia ${APP_LICENSE}`;
+  }
+  if (elements.projectReleaseAdmin) {
+    elements.projectReleaseAdmin.textContent = `Release ${APP_RELEASE}`;
+  }
+  if (elements.projectLicenseAdmin) {
+    elements.projectLicenseAdmin.textContent =
+      `Código distribuido bajo licencia ${APP_LICENSE}. Los audios de la biblioteca pueden tener condiciones independientes.`;
+  }
+
+  [elements.projectReleaseLinkUser, elements.projectReleaseLinkAdmin].forEach((link) => {
+    if (link) {
+      link.href = APP_RELEASE_URL;
+    }
+  });
+  [elements.projectLicenseLinkUser, elements.projectLicenseLinkAdmin].forEach((link) => {
+    if (link) {
+      link.href = "./LICENSE";
+    }
+  });
+}
+
 function bindEvents() {
   elements.listenButton.addEventListener("click", toggleListening);
   elements.modeToggleButton.addEventListener("click", toggleMode);
@@ -399,9 +453,28 @@ function bindEvents() {
       toggleListening();
     }
   });
+  elements.extendListenButton?.addEventListener("click", () => {
+    if (!state.isListening) {
+      startExtendedListening();
+    }
+  });
 
   elements.clearLibraryButton.addEventListener("click", clearLibrary);
   elements.clearHistoryButton.addEventListener("click", clearHistory);
+  elements.historyDateFilter?.addEventListener("change", () => {
+    state.historyFilters.range = elements.historyDateFilter.value;
+    renderHistory();
+  });
+  elements.historySearchInput?.addEventListener("input", () => {
+    state.historyFilters.query = elements.historySearchInput.value.trim();
+    renderHistory();
+  });
+  document.querySelectorAll("[data-history-status]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.historyFilters.status = button.dataset.historyStatus || "all";
+      renderHistory();
+    });
+  });
   elements.adminSelectFilesButton?.addEventListener("click", () => {
     elements.fileInput?.click();
   });
@@ -509,7 +582,9 @@ function loadSavedState() {
 
     const rawHistory = localStorage.getItem(STORAGE_KEYS.history);
     if (rawHistory) {
-      state.history = JSON.parse(rawHistory);
+      state.history = JSON.parse(rawHistory)
+        .map((entry, index) => normalizeHistoryEntry(entry, index))
+        .filter(Boolean);
     }
 
     const rawMode = localStorage.getItem(STORAGE_KEYS.mode);
@@ -924,6 +999,13 @@ function syncSettingsUi() {
   if (elements.listenTimer) {
     elements.listenTimer.hidden = true;
     elements.listenTimer.textContent = formatListeningCountdown(0, state.settings.captureSeconds);
+  }
+  if (elements.extendListenButton) {
+    const extendedSeconds = Math.min(30, Math.max(state.settings.captureSeconds + 10, 10));
+    elements.extendListenButton.textContent =
+      extendedSeconds > state.settings.captureSeconds
+        ? `Escuchar ${extendedSeconds} s`
+        : `Escuchar ${state.settings.captureSeconds} s`;
   }
   renderTagFilterOptions();
 }
@@ -1488,6 +1570,14 @@ function processCapturedSignal(inputSignal, capturedSeconds) {
       matches: [],
       analysis: null,
     });
+    pushHistoryEntry({
+      name: "Audio insuficiente",
+      confidence: 0,
+      meta: `${capturedSeconds.toFixed(1)} s útiles · escucha demasiado corta`,
+      statusKind: "inconclusive",
+      statusLabel: "No fiable",
+      timestamp: Date.now(),
+    });
     resetIdleUi();
     return;
   }
@@ -1511,6 +1601,14 @@ function processCapturedSignal(inputSignal, capturedSeconds) {
       analysis: features,
     });
     updateStatus("idle", "Sin toque");
+    pushHistoryEntry({
+      name: "Sin toque detectable",
+      confidence: 0,
+      meta: `${Math.round(features.tempoEstimate || 0)} bpm · calidad ${Math.round((features.signalQuality || 0) * 100)}%`,
+      statusKind: "inconclusive",
+      statusLabel: "No fiable",
+      timestamp: Date.now(),
+    });
     resetIdleUi();
     return;
   }
@@ -1527,6 +1625,14 @@ function processCapturedSignal(inputSignal, capturedSeconds) {
       analysis: features,
     });
     updateStatus("idle", "Sin coincidencia");
+    pushHistoryEntry({
+      name: "Sin coincidencia",
+      confidence: 0,
+      meta: `${Math.round(features.tempoEstimate || 0)} bpm · sin referencias comparables`,
+      statusKind: "inconclusive",
+      statusLabel: "No fiable",
+      timestamp: Date.now(),
+    });
     resetIdleUi();
     return;
   }
@@ -1559,6 +1665,14 @@ function processCapturedSignal(inputSignal, capturedSeconds) {
       probableFieldMatch ? "probable" : ambiguity ? "ambiguous" : "idle",
       probableFieldMatch ? "Probable" : ambiguity ? "Ambiguo" : "No concluyente",
     );
+    pushHistoryEntry({
+      name: bestMatch.reference.name,
+      confidence: probableFieldMatch ? getVisibleConfidence(bestMatch) : 0,
+      meta: `${Math.round(features.tempoEstimate || 0)} bpm · ${features.peaksCount} golpes`,
+      statusKind: probableFieldMatch && !ambiguity ? "probable" : ambiguity ? "ambiguous" : "inconclusive",
+      statusLabel: probableFieldMatch && !ambiguity ? "Probable" : ambiguity ? "Ambiguo" : "No fiable",
+      timestamp: Date.now(),
+    });
     resetIdleUi();
     return;
   }
@@ -4132,6 +4246,9 @@ function renderMatches(matches) {
 }
 
 function renderHistory() {
+  const filteredHistory = getFilteredHistoryEntries();
+  updateHistoryFilterUi(filteredHistory.length);
+
   if (!state.history.length) {
     elements.historyList.innerHTML =
       '<div class="empty-state">Todavía no hay detecciones guardadas en este dispositivo.</div>';
@@ -4139,12 +4256,22 @@ function renderHistory() {
     return;
   }
 
-  elements.historyList.innerHTML = state.history
+  if (!filteredHistory.length) {
+    elements.historyList.innerHTML =
+      '<div class="empty-state"><strong>Sin coincidencias</strong><span>Ajusta los filtros para ver otras escuchas guardadas.</span></div>';
+    refreshHeaderStats();
+    return;
+  }
+
+  elements.historyList.innerHTML = filteredHistory
     .map(
       (entry) => `
         <article class="history-item">
           <header>
-            <strong>${escapeHtml(entry.name)}</strong>
+            <div class="history-title-block">
+              <strong>${escapeHtml(entry.name)}</strong>
+              <span class="history-badge history-badge--${escapeHtml(entry.statusKind)}">${escapeHtml(entry.statusLabel)}</span>
+            </div>
             <span class="history-score">${entry.confidence}%</span>
           </header>
           <div class="history-meta">${escapeHtml(entry.meta)}</div>
@@ -4155,6 +4282,66 @@ function renderHistory() {
     .join("");
 
   refreshHeaderStats();
+}
+
+function getFilteredHistoryEntries() {
+  const now = Date.now();
+  const query = normalizeTextForSearch(state.historyFilters.query || "");
+
+  return state.history.filter((entry) => {
+    const status = state.historyFilters.status || "all";
+    if (status !== "all" && entry.statusKind !== status) {
+      return false;
+    }
+
+    if (state.historyFilters.range === "today" && entry.timestamp && now - entry.timestamp > 24 * 60 * 60 * 1000) {
+      return false;
+    }
+
+    if (state.historyFilters.range === "week" && entry.timestamp && now - entry.timestamp > 7 * 24 * 60 * 60 * 1000) {
+      return false;
+    }
+
+    if (!query) {
+      return true;
+    }
+
+    const haystack = normalizeTextForSearch(`${entry.name} ${entry.meta} ${entry.statusLabel}`);
+    return haystack.includes(query);
+  });
+}
+
+function updateHistoryFilterUi(filteredCount) {
+  document.querySelectorAll("[data-history-status]").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.historyStatus === state.historyFilters.status);
+  });
+
+  if (elements.historyDateFilter) {
+    elements.historyDateFilter.value = state.historyFilters.range;
+  }
+
+  if (elements.historySearchInput && elements.historySearchInput.value !== state.historyFilters.query) {
+    elements.historySearchInput.value = state.historyFilters.query;
+  }
+
+  if (!elements.historyFilterSummary) {
+    return;
+  }
+
+  const parts = [`${filteredCount} de ${state.history.length} escuchas`];
+  if (state.historyFilters.status !== "all") {
+    parts.push(HISTORY_STATUS_LABELS[state.historyFilters.status] || state.historyFilters.status);
+  }
+  if (state.historyFilters.range === "today") {
+    parts.push("hoy");
+  } else if (state.historyFilters.range === "week") {
+    parts.push("últimos 7 días");
+  }
+  if (state.historyFilters.query) {
+    parts.push(`búsqueda: "${state.historyFilters.query}"`);
+  }
+
+  elements.historyFilterSummary.textContent = parts.join(" · ");
 }
 
 function renderTagFilterOptions() {
@@ -4373,6 +4560,7 @@ function setCaptureInteractionState(isLocked, { allowListenButton = false } = {}
     elements.modeToggleButton,
     elements.shareResultButton,
     elements.repeatResultButton,
+    elements.extendListenButton,
     elements.captureDuration,
     elements.minimumConfidence,
     elements.analysisMode,
@@ -4380,6 +4568,8 @@ function setCaptureInteractionState(isLocked, { allowListenButton = false } = {}
     elements.clearLibraryButton,
     elements.clearHistoryButton,
     elements.adminSelectFilesButton,
+    elements.historyDateFilter,
+    elements.historySearchInput,
     elements.adminSearchInput,
     elements.adminTagFilter,
     elements.adminNewTagInput,
@@ -4391,6 +4581,9 @@ function setCaptureInteractionState(isLocked, { allowListenButton = false } = {}
   ];
 
   document.querySelectorAll(".bottom-nav [data-nav-target]").forEach((button) => {
+    controls.push(button);
+  });
+  document.querySelectorAll("[data-history-status]").forEach((button) => {
     controls.push(button);
   });
 
@@ -4451,17 +4644,23 @@ function setAppLoadingState(isLoading, options = {}) {
     elements.modeToggleButton,
     elements.shareResultButton,
     elements.repeatResultButton,
+    elements.extendListenButton,
     elements.captureDuration,
     elements.minimumConfidence,
     elements.analysisMode,
     elements.fileInput,
     elements.clearLibraryButton,
     elements.clearHistoryButton,
+    elements.historyDateFilter,
+    elements.historySearchInput,
     elements.adminSelectFilesButton,
   ].forEach((control) => {
     if (control) {
       control.disabled = disabled;
     }
+  });
+  document.querySelectorAll("[data-history-status]").forEach((button) => {
+    button.disabled = disabled;
   });
 }
 
@@ -4552,30 +4751,68 @@ function buildCaptureAdvice(analysis) {
   return `${diagnostics} ${advice}.`;
 }
 
-function pushHistory(bestMatch, analysis, uncertain) {
-  const entry = {
-    id: crypto.randomUUID(),
-    name: uncertain ? `${bestMatch.reference.name} (dudoso)` : bestMatch.reference.name,
-    confidence: getVisibleConfidence(bestMatch),
-    meta: `${Math.round(analysis.tempoEstimate || 0)} bpm · ${analysis.peaksCount} golpes`,
-    timeLabel: new Date().toLocaleString("es-ES", {
-      day: "2-digit",
-      month: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }),
-  };
+function normalizeHistoryEntry(entry, index = 0) {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
 
-  state.history.unshift(entry);
+  const statusKind = HISTORY_STATUS_LABELS[entry.statusKind] ? entry.statusKind : "confirmed";
+  const timestamp = Number(entry.timestamp) || Date.now() - index;
+
+  return {
+    id: entry.id || crypto.randomUUID(),
+    name: String(entry.name || "Escucha guardada"),
+    confidence: clamp(Math.round(Number(entry.confidence) || 0), 0, 98),
+    meta: String(entry.meta || ""),
+    timeLabel:
+      entry.timeLabel ||
+      new Date(timestamp).toLocaleString("es-ES", {
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    statusKind,
+    statusLabel: entry.statusLabel || HISTORY_STATUS_LABELS[statusKind],
+    timestamp,
+  };
+}
+
+function pushHistoryEntry(entry) {
+  const normalized = normalizeHistoryEntry(entry);
+  if (!normalized) {
+    return;
+  }
+
+  state.history.unshift(normalized);
   state.history = state.history.slice(0, HISTORY_LIMIT);
   persistHistory();
   renderHistory();
+}
+
+function pushHistory(bestMatch, analysis, uncertain) {
+  pushHistoryEntry({
+    name: uncertain ? `${bestMatch.reference.name} (dudoso)` : bestMatch.reference.name,
+    confidence: getVisibleConfidence(bestMatch),
+    meta: `${Math.round(analysis.tempoEstimate || 0)} bpm · ${analysis.peaksCount} golpes`,
+    statusKind: uncertain ? "ambiguous" : "confirmed",
+    statusLabel: uncertain ? "Ambiguo" : "Confirmado",
+    timestamp: Date.now(),
+  });
 }
 
 function clearHistory() {
   state.history = [];
   persistHistory();
   renderHistory();
+}
+
+function startExtendedListening() {
+  const extendedSeconds = Math.min(30, Math.max(state.settings.captureSeconds + 10, 10));
+  state.settings.captureSeconds = extendedSeconds;
+  syncSettingsUi();
+  persistSettings();
+  toggleListening();
 }
 
 async function clearLibrary() {

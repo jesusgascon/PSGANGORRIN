@@ -33,7 +33,7 @@ Los tres toques que siguen siendo el foco de afinado fino son:
 - detecta si la captura es usable o no
 - compara la señal contra una biblioteca comun
 - muestra un resultado confirmado, probable, ambiguo o no fiable
-- guarda historial local de escuchas
+- guarda historial local de escuchas con filtros por estado, fecha y búsqueda
 - permite administrar la biblioteca comun en modo local con servidor Python
 - funciona como demo estatica en GitHub Pages
 
@@ -45,7 +45,8 @@ No es un clon de Shazam ni un modelo entrenado. Es un detector ligero de ritmo, 
 
 - escuchar un toque
 - ver resultado y ranking
-- revisar historial
+- repetir una escucha o ampliarla `+10 s` desde el propio resultado
+- revisar historial con filtros por estado, periodo y búsqueda
 - ajustar modo de deteccion y tiempo de escucha
 
 ### Administracion
@@ -161,6 +162,19 @@ Cambiar la clave:
 ```bash
 COFRABEAT_ADMIN_PASSWORD="otra-clave" python3 ./scripts/serve_app.py --host 0.0.0.0 --port 8000
 ```
+
+## Experiencia De Uso
+
+La app está pensada para móvil y escritorio con el mismo flujo:
+
+- overlay visual durante la carga inicial de biblioteca y calibración
+- bloqueo de la interfaz durante la escucha, dejando solo `Parar`
+- overlay visual de análisis mientras se calcula el resultado
+- resultado con acciones rápidas:
+  - `Compartir`
+  - `Escuchar otra vez`
+  - `Escuchar X s` para ampliar la toma actual
+- historial local filtrable para revisar detecciones dudosas o repetidas
 
 ## Validacion Y Dataset Real
 

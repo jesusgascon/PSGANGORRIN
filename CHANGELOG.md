@@ -11,6 +11,11 @@
   - progreso inicial coherente hasta `100%`
   - bloqueo real de la interfaz durante la escucha
   - overlay visual de analisis al terminar la grabacion
+- Mejoras de flujo para el usuario:
+  - `Escuchar otra vez` desde el resultado
+  - accion rapida para ampliar la escucha actual `+10 s` hasta `30 s`
+  - historial local con filtros por estado, periodo y texto
+  - guardado de estados `Confirmado`, `Probable`, `Ambiguo` y `No fiable`
 - Tiempo de escucha ampliado hasta `30 s` con contador visual de transcurrido y restante.
 - Documentacion consolidada y licencia MIT explicita.
 

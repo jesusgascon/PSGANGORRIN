@@ -211,7 +211,10 @@
               Compartir
             </button>
             <button id="repeatResultButton" class="secondary-button" type="button">
-              Repetir
+              Escuchar otra vez
+            </button>
+            <button id="extendListenButton" class="ghost-button" type="button">
+              Escuchar 20 s
             </button>
           </div>
 
@@ -403,6 +406,46 @@
               Borrar
             </button>
           </div>
+          <div class="history-toolbar" aria-label="Filtros del historial">
+            <div class="history-filter-chips" role="group" aria-label="Filtrar por estado">
+              <button class="history-filter-chip is-active" type="button" data-history-status="all">
+                Todos
+              </button>
+              <button class="history-filter-chip" type="button" data-history-status="confirmed">
+                Confirmados
+              </button>
+              <button class="history-filter-chip" type="button" data-history-status="probable">
+                Probables
+              </button>
+              <button class="history-filter-chip" type="button" data-history-status="ambiguous">
+                Ambiguos
+              </button>
+              <button class="history-filter-chip" type="button" data-history-status="inconclusive">
+                No fiables
+              </button>
+            </div>
+            <div class="history-filter-row">
+              <label class="history-filter-field" for="historyDateFilter">
+                <span>Periodo</span>
+                <select id="historyDateFilter">
+                  <option value="all">Todo</option>
+                  <option value="today">Hoy</option>
+                  <option value="week">7 días</option>
+                </select>
+              </label>
+              <label class="history-filter-field history-filter-field--search" for="historySearchInput">
+                <span>Buscar toque</span>
+                <input
+                  id="historySearchInput"
+                  type="search"
+                  placeholder="Ej. Zaragoza"
+                  autocomplete="off"
+                  inputmode="search"
+                />
+              </label>
+            </div>
+            <p id="historyFilterSummary" class="history-filter-summary">Mostrando todo el historial local.</p>
+          </div>
           <div id="historyList" class="history-list"></div>
         </section>
 
@@ -423,6 +466,34 @@
               <strong>3</strong>
               <span>Usa la barra inferior para moverte por la app.</span>
             </article>
+          </div>
+          <div class="project-meta-banner" aria-label="Información del proyecto">
+            <div class="project-meta-banner__copy">
+              <span class="project-meta-banner__kicker">Proyecto abierto</span>
+              <strong id="projectReleaseUser">Release</strong>
+              <span id="projectLicenseUser">Licencia</span>
+              <small>El código usa licencia libre. Los audios pueden requerir permisos aparte.</small>
+            </div>
+            <div class="project-meta-banner__actions">
+              <a
+                id="projectReleaseLinkUser"
+                class="ghost-button compact-ghost"
+                href="#"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Release
+              </a>
+              <a
+                id="projectLicenseLinkUser"
+                class="ghost-button compact-ghost"
+                href="./LICENSE"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Licencia
+              </a>
+            </div>
           </div>
         </section>
 
@@ -449,6 +520,33 @@
               <strong>Móvil</strong>
               <span>Entra desde la IP del ordenador que sirve la app.</span>
             </article>
+          </div>
+          <div class="project-meta-panel" aria-label="Estado del proyecto">
+            <div class="project-meta-panel__head">
+              <span class="eyebrow">Proyecto</span>
+              <strong id="projectReleaseAdmin">Release</strong>
+            </div>
+            <p id="projectLicenseAdmin" class="project-meta-panel__text">Licencia</p>
+            <div class="project-meta-panel__actions">
+              <a
+                id="projectReleaseLinkAdmin"
+                class="secondary-button compact-secondary"
+                href="#"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Ver release
+              </a>
+              <a
+                id="projectLicenseLinkAdmin"
+                class="ghost-button compact-ghost"
+                href="./LICENSE"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Ver licencia
+              </a>
+            </div>
           </div>
           <div class="admin-help-grid">
             <div id="localHelpCard" class="local-help-card" hidden>
