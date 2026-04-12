@@ -3813,6 +3813,7 @@ code {
   .hero-copy {
     text-align: left;
     padding-right: 12px;
+    max-width: 540px;
   }
 
   .hero-highlights {
@@ -3820,8 +3821,12 @@ code {
   }
 
   .hero-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     justify-content: flex-start;
+    align-self: flex-start;
     max-width: 420px;
+    width: 100%;
   }
 
   .project-meta-banner {
