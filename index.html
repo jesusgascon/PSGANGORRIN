@@ -342,6 +342,14 @@
                 <span>Toques</span>
                 <strong>Editar fichas</strong>
               </button>
+              <button class="admin-quick-action" type="button" data-admin-open="admin-conflicts">
+                <span>Conflictos</span>
+                <strong>Ver colisiones</strong>
+              </button>
+              <button class="admin-quick-action" type="button" data-admin-open="admin-security">
+                <span>Seguridad</span>
+                <strong>Contraseña admin</strong>
+              </button>
             </div>
 
             <div class="admin-secondary-actions">
@@ -417,6 +425,54 @@
               <h4>Toques disponibles</h4>
             </div>
             <div id="libraryGrid" class="library-grid"></div>
+          </div>
+
+          <div id="adminConflictsSection" class="admin-mobile-panel" data-admin-panel="admin-conflicts">
+            <div class="admin-panel-title">
+              <p class="eyebrow">Auditoría de campo</p>
+              <h4>Toques conflictivos</h4>
+            </div>
+            <p id="adminConflictsSummary" class="library-note">Analizando el dataset de campo...</p>
+            <div id="adminConflictsList" class="admin-conflicts-list"></div>
+          </div>
+
+          <div id="adminSecuritySection" class="admin-mobile-panel" data-admin-panel="admin-security">
+            <div class="admin-panel-title">
+              <p class="eyebrow">Seguridad</p>
+              <h4>Contraseña de administración</h4>
+            </div>
+            <div class="admin-security-card">
+              <strong id="adminSecurityStatus">Sin contraseña configurada</strong>
+              <p id="adminSecurityHint" class="library-note">Define una contraseña robusta para proteger la administración global.</p>
+              <div class="control-group">
+                <label for="adminNewPasswordInput">Nueva contraseña</label>
+                <input
+                  id="adminNewPasswordInput"
+                  class="mobile-input"
+                  type="password"
+                  minlength="8"
+                  autocomplete="new-password"
+                  placeholder="Mínimo 8 caracteres"
+                />
+              </div>
+              <div class="control-group">
+                <label for="adminConfirmPasswordInput">Confirmar contraseña</label>
+                <input
+                  id="adminConfirmPasswordInput"
+                  class="mobile-input"
+                  type="password"
+                  minlength="8"
+                  autocomplete="new-password"
+                  placeholder="Repite la contraseña"
+                />
+              </div>
+              <div class="action-row">
+                <button id="adminSavePasswordButton" class="secondary-button" type="button">
+                  Guardar contraseña
+                </button>
+              </div>
+              <p id="adminSecurityMessage" class="library-note" hidden></p>
+            </div>
           </div>
         </section>
 
@@ -704,18 +760,28 @@ python3 ./scripts/serve_https.py --host 0.0.0.0 --port 8443</code></pre>
             ×
           </button>
         </div>
-        <p class="library-note">
+        <p id="adminLoginHint" class="library-note">
           Introduce la contraseña para gestionar la base de toques.
         </p>
         <form id="adminLoginForm" class="admin-login-form">
           <label class="control-group" for="adminPasswordInput">
-            <span>Contraseña</span>
+            <span id="adminPasswordLabel">Contraseña</span>
             <input
               id="adminPasswordInput"
               class="mobile-input"
               type="password"
               autocomplete="current-password"
               placeholder="Contraseña de mantenimiento"
+            />
+          </label>
+          <label id="adminPasswordConfirmGroup" class="control-group" for="adminPasswordConfirmInput" hidden>
+            <span>Confirmar contraseña</span>
+            <input
+              id="adminPasswordConfirmInput"
+              class="mobile-input"
+              type="password"
+              autocomplete="new-password"
+              placeholder="Repite la contraseña"
             />
           </label>
           <p id="adminLoginError" class="form-error" hidden>Contraseña incorrecta.</p>

@@ -2301,6 +2301,61 @@ input:disabled {
   line-height: 1.45;
 }
 
+.admin-security-card,
+.admin-conflict-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.admin-security-card strong {
+  color: var(--text);
+}
+
+.admin-conflicts-list {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-conflict-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-conflict-card__head strong {
+  color: var(--wax);
+}
+
+.admin-conflict-card__head span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.admin-conflict-rivals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-conflict-rival {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(216, 170, 79, 0.09);
+  border: 1px solid rgba(216, 170, 79, 0.16);
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
 .control-group {
   display: grid;
   gap: 8px;

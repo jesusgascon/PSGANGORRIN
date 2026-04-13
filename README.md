@@ -163,19 +163,20 @@ Modo completo:
 
 - administracion real
 - guardado global de metadatos
+- cambio de contraseña desde la propia zona admin
+- panel de toques conflictivos basado en el dataset de campo
 - regeneracion de `manifest.json`, `features.json` y `calibration.json`
 
-Clave admin por defecto en local:
+Contraseña admin:
 
-```text
-psangorrin
-```
-
-Cambiar la clave:
+- ya no existe una clave por defecto publica
+- puedes arrancar con una contraseña temporal por entorno:
 
 ```bash
 COFRABEAT_ADMIN_PASSWORD="otra-clave" python3 ./scripts/serve_app.py --host 0.0.0.0 --port 8000
 ```
+
+- o configurar/cambiar la contraseña directamente desde el panel `Seguridad` dentro de administración
 
 ## Experiencia De Uso
 

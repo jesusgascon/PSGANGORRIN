@@ -187,6 +187,7 @@ const state = {
   },
   uiMode: "user",
   adminAuthenticated: false,
+  adminConfigured: false,
   adminActivePanel: "admin-panel",
   toastTimer: null,
   detectionLimits: { ...DEFAULT_DETECTION_LIMITS },
@@ -205,6 +206,12 @@ const state = {
     commonEntries: 0,
     commonLoaded: 0,
     commonFailed: 0,
+  },
+  adminConflicts: {
+    items: [],
+    capturesReviewed: 0,
+    capturesWithConflicts: 0,
+    loaded: false,
   },
 };
 
@@ -292,8 +299,18 @@ const elements = {
   adminToolsSection: document.querySelector("#adminToolsSection"),
   adminUploadSection: document.querySelector("#adminUploadSection"),
   adminLibrarySection: document.querySelector("#adminLibrarySection"),
+  adminConflictsSection: document.querySelector("#adminConflictsSection"),
+  adminSecuritySection: document.querySelector("#adminSecuritySection"),
   adminInfoSection: document.querySelector("#adminInfoSection"),
   adminSelectFilesButton: document.querySelector("#adminSelectFilesButton"),
+  adminConflictsSummary: document.querySelector("#adminConflictsSummary"),
+  adminConflictsList: document.querySelector("#adminConflictsList"),
+  adminSecurityStatus: document.querySelector("#adminSecurityStatus"),
+  adminSecurityHint: document.querySelector("#adminSecurityHint"),
+  adminNewPasswordInput: document.querySelector("#adminNewPasswordInput"),
+  adminConfirmPasswordInput: document.querySelector("#adminConfirmPasswordInput"),
+  adminSavePasswordButton: document.querySelector("#adminSavePasswordButton"),
+  adminSecurityMessage: document.querySelector("#adminSecurityMessage"),
   historyList: document.querySelector("#historyList"),
   clearHistoryButton: document.querySelector("#clearHistoryButton"),
   historyDateFilter: document.querySelector("#historyDateFilter"),
@@ -301,7 +318,11 @@ const elements = {
   historyFilterSummary: document.querySelector("#historyFilterSummary"),
   adminLoginModal: document.querySelector("#adminLoginModal"),
   adminLoginForm: document.querySelector("#adminLoginForm"),
+  adminLoginHint: document.querySelector("#adminLoginHint"),
   adminPasswordInput: document.querySelector("#adminPasswordInput"),
+  adminPasswordLabel: document.querySelector("#adminPasswordLabel"),
+  adminPasswordConfirmGroup: document.querySelector("#adminPasswordConfirmGroup"),
+  adminPasswordConfirmInput: document.querySelector("#adminPasswordConfirmInput"),
   adminLoginError: document.querySelector("#adminLoginError"),
   adminLoginSubmitButton: document.querySelector("#adminLoginSubmitButton"),
   adminLoginCancelButton: document.querySelector("#adminLoginCancelButton"),
@@ -344,6 +365,7 @@ async function boot() {
     renderProjectMeta();
     loadSavedState();
     await refreshAdminSession();
+    renderAdminSecurity();
     bindEvents();
     setupMicrophonePermissionWatcher();
     setAppLoadingState(true, {
@@ -527,6 +549,7 @@ function bindEvents() {
   elements.projectLicenseLinkAdmin?.addEventListener("click", () => openProjectInfoModal("license"));
   elements.projectInfoDoneButton?.addEventListener("click", closeProjectInfoModal);
   elements.projectInfoCloseButton?.addEventListener("click", closeProjectInfoModal);
+  elements.adminSavePasswordButton?.addEventListener("click", handleAdminPasswordSave);
   elements.repeatResultButton.addEventListener("click", () => {
     if (!state.isListening) {
       toggleListening();
@@ -1142,6 +1165,8 @@ function syncModeUi() {
   if (state.uiMode === "admin") {
     setAdminActivePanel(state.adminActivePanel || "admin-panel");
     updateBottomNavState(state.adminActivePanel);
+    renderAdminSecurity();
+    loadAdminConflicts();
   } else {
     stopReferencePreviews();
     updateBottomNavState("detect");
@@ -1173,6 +1198,105 @@ function refreshHeaderStats() {
   }
   elements.adminTotalAudios.textContent = String(state.references.length);
   elements.adminFilteredAudios.textContent = String(getFilteredReferences().length);
+}
+
+function renderAdminSecurity() {
+  if (!elements.adminSecurityStatus) {
+    return;
+  }
+
+  if (state.adminConfigured) {
+    elements.adminSecurityStatus.textContent = "Contraseña configurada";
+    elements.adminSecurityHint.textContent =
+      "Puedes cambiarla desde aquí. El cambio se guarda en la configuración local del proyecto.";
+  } else {
+    elements.adminSecurityStatus.textContent = "Sin contraseña configurada";
+    elements.adminSecurityHint.textContent =
+      "Configura una contraseña para proteger la administración global antes de usarla en otros dispositivos.";
+  }
+}
+
+function showAdminSecurityMessage(message, isError = false) {
+  if (!elements.adminSecurityMessage) {
+    return;
+  }
+
+  elements.adminSecurityMessage.hidden = false;
+  elements.adminSecurityMessage.textContent = message;
+  elements.adminSecurityMessage.classList.toggle("is-error", isError);
+}
+
+async function loadAdminConflicts() {
+  if (!elements.adminConflictsSummary || !elements.adminConflictsList) {
+    return;
+  }
+  if (!canUseAdminApi() || !state.adminAuthenticated) {
+    elements.adminConflictsSummary.textContent =
+      "Accede como administrador para revisar conflictos reales del dataset de campo.";
+    elements.adminConflictsList.innerHTML = "";
+    return;
+  }
+
+  elements.adminConflictsSummary.textContent = "Analizando conflictos reales del dataset de campo...";
+  try {
+    const response = await fetch("./api/admin/conflicts", {
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+    const payload = await response.json().catch(() => ({ items: [] }));
+    if (!response.ok) {
+      elements.adminConflictsSummary.textContent =
+        payload.error || "No se pudo calcular el panel de conflictos.";
+      elements.adminConflictsList.innerHTML = "";
+      return;
+    }
+    state.adminConflicts = {
+      items: Array.isArray(payload.items) ? payload.items : [],
+      capturesReviewed: Number(payload.capturesReviewed) || 0,
+      capturesWithConflicts: Number(payload.capturesWithConflicts) || 0,
+      loaded: true,
+    };
+    renderAdminConflicts();
+  } catch (error) {
+    elements.adminConflictsSummary.textContent =
+      "No se pudo cargar el panel de conflictos. Revisa el servidor local.";
+    elements.adminConflictsList.innerHTML = "";
+  }
+}
+
+function renderAdminConflicts() {
+  if (!elements.adminConflictsSummary || !elements.adminConflictsList) {
+    return;
+  }
+
+  const { items, capturesReviewed, capturesWithConflicts } = state.adminConflicts;
+  elements.adminConflictsSummary.textContent =
+    `${capturesWithConflicts} conflictos detectados en ${capturesReviewed} capturas revisadas.`;
+  if (!items.length) {
+    elements.adminConflictsList.innerHTML =
+      '<article class="admin-conflict-card"><strong>Sin colisiones destacadas</strong><span>El dataset revisado no muestra toques con confusiones repetidas.</span></article>';
+    return;
+  }
+
+  elements.adminConflictsList.innerHTML = items
+    .map((item) => {
+      const rivals = (item.topRivals || [])
+        .map((rival) => `<span class="admin-conflict-rival">${escapeHtml(rival.name)} · ${rival.count}</span>`)
+        .join("");
+      return `
+        <article class="admin-conflict-card">
+          <div class="admin-conflict-card__head">
+            <strong>${escapeHtml(item.expectedName)}</strong>
+            <span>${item.totalConflicts} conflictos</span>
+          </div>
+          <p class="library-note">
+            Fallos: ${item.wrong} · Ambiguos: ${item.ambiguous} · Probables ambiguos: ${item.probableAmbiguous}
+          </p>
+          <div class="admin-conflict-rivals">${rivals || '<span class="admin-conflict-rival">Sin rival dominante</span>'}</div>
+        </article>
+      `;
+    })
+    .join("");
 }
 
 async function toggleMode() {
@@ -1211,8 +1335,21 @@ function openAdminLoginModal() {
 
   elements.adminLoginError.hidden = true;
   elements.adminPasswordInput.value = "";
+  elements.adminPasswordConfirmInput.value = "";
   elements.adminLoginSubmitButton.disabled = false;
-  elements.adminLoginSubmitButton.textContent = "Entrar";
+  const setupMode = !state.adminConfigured;
+  elements.adminPasswordLabel.textContent = setupMode ? "Nueva contraseña" : "Contraseña";
+  elements.adminPasswordInput.autocomplete = setupMode ? "new-password" : "current-password";
+  elements.adminPasswordInput.placeholder = setupMode
+    ? "Configura la contraseña de administración"
+    : "Contraseña de mantenimiento";
+  if (elements.adminLoginHint) {
+    elements.adminLoginHint.textContent = setupMode
+      ? "No hay contraseña configurada. Define una nueva para activar la administración global."
+      : "Introduce la contraseña para gestionar la base de toques.";
+  }
+  elements.adminPasswordConfirmGroup.hidden = !setupMode;
+  elements.adminLoginSubmitButton.textContent = setupMode ? "Configurar y entrar" : "Entrar";
   elements.adminLoginModal.hidden = false;
   window.setTimeout(() => elements.adminPasswordInput?.focus(), 40);
 }
@@ -1224,23 +1361,41 @@ function closeAdminLoginModal() {
 
   elements.adminLoginModal.hidden = true;
   elements.adminPasswordInput.value = "";
+  elements.adminPasswordConfirmInput.value = "";
   elements.adminLoginError.hidden = true;
 }
 
 async function handleAdminLoginSubmit(event) {
   event.preventDefault();
-  const password = elements.adminPasswordInput.value;
+  const password = elements.adminPasswordInput.value.trim();
   if (!password) {
-    elements.adminLoginError.textContent = "Introduce la contraseña.";
+    elements.adminLoginError.textContent = state.adminConfigured
+      ? "Introduce la contraseña."
+      : "Define una contraseña nueva.";
     elements.adminLoginError.hidden = false;
     return;
   }
+  if (!state.adminConfigured) {
+    const confirmation = elements.adminPasswordConfirmInput.value.trim();
+    if (password.length < 8) {
+      elements.adminLoginError.textContent = "La contraseña debe tener al menos 8 caracteres.";
+      elements.adminLoginError.hidden = false;
+      return;
+    }
+    if (password !== confirmation) {
+      elements.adminLoginError.textContent = "La confirmación no coincide.";
+      elements.adminLoginError.hidden = false;
+      return;
+    }
+  }
 
   elements.adminLoginSubmitButton.disabled = true;
-  elements.adminLoginSubmitButton.textContent = "Comprobando";
-  const authenticated = await loginAdminSession(password);
+  elements.adminLoginSubmitButton.textContent = state.adminConfigured ? "Comprobando" : "Guardando";
+  const authenticated = state.adminConfigured
+    ? await loginAdminSession(password)
+    : await saveAdminPassword(password);
   elements.adminLoginSubmitButton.disabled = false;
-  elements.adminLoginSubmitButton.textContent = "Entrar";
+  elements.adminLoginSubmitButton.textContent = state.adminConfigured ? "Entrar" : "Configurar y entrar";
 
   if (!authenticated) {
     if (elements.adminLoginError.hidden || !elements.adminLoginError.textContent.trim()) {
@@ -1290,6 +1445,7 @@ function enterStaticAdminDemo() {
 async function refreshAdminSession() {
   if (!canUseAdminApi()) {
     state.adminAuthenticated = false;
+    state.adminConfigured = false;
     if (state.uiMode === "admin" && !isStaticPublicDemo()) {
       state.uiMode = "user";
       persistMode();
@@ -1302,14 +1458,18 @@ async function refreshAdminSession() {
       cache: "no-store",
       credentials: "same-origin",
     });
-    const payload = response.ok ? await response.json() : { authenticated: false };
+    const payload = response.ok
+      ? await response.json()
+      : { authenticated: false, adminConfigured: false };
     state.adminAuthenticated = Boolean(payload.authenticated);
+    state.adminConfigured = Boolean(payload.adminConfigured);
     if (state.uiMode === "admin" && !state.adminAuthenticated) {
       state.uiMode = "user";
       persistMode();
     }
   } catch (error) {
     state.adminAuthenticated = false;
+    state.adminConfigured = false;
     if (state.uiMode === "admin") {
       state.uiMode = "user";
       persistMode();
@@ -1353,6 +1513,44 @@ async function loginAdminSession(password) {
   }
 }
 
+async function saveAdminPassword(newPassword) {
+  try {
+    const response = await fetch("./api/admin/password", {
+      method: "POST",
+      cache: "no-store",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ newPassword }),
+    });
+    const payload = await response.json().catch(() => ({ saved: false }));
+    if (!response.ok) {
+      if (elements.adminLoginError && !elements.adminLoginModal.hidden) {
+        elements.adminLoginError.textContent = payload.error || "No se pudo guardar la contraseña.";
+        elements.adminLoginError.hidden = false;
+      } else {
+        showAdminSecurityMessage(payload.error || "No se pudo guardar la contraseña.", true);
+      }
+      return false;
+    }
+    state.adminConfigured = true;
+    state.adminAuthenticated = Boolean(payload.authenticated);
+    renderAdminSecurity();
+    showAdminSecurityMessage("Contraseña de administración actualizada.");
+    return true;
+  } catch (error) {
+    const message = "No se pudo guardar la contraseña. Comprueba que la app está abierta con el servidor del proyecto.";
+    if (elements.adminLoginError && !elements.adminLoginModal.hidden) {
+      elements.adminLoginError.textContent = message;
+      elements.adminLoginError.hidden = false;
+    } else {
+      showAdminSecurityMessage(message, true);
+    }
+    return false;
+  }
+}
+
 async function logoutAdminSession() {
   state.adminAuthenticated = false;
   if (!canUseAdminApi()) {
@@ -1368,6 +1566,30 @@ async function logoutAdminSession() {
   } catch (error) {
     console.warn("No se pudo cerrar la sesión de administración", error);
   }
+}
+
+async function handleAdminPasswordSave() {
+  const password = elements.adminNewPasswordInput?.value?.trim() || "";
+  const confirmation = elements.adminConfirmPasswordInput?.value?.trim() || "";
+  if (password.length < 8) {
+    showAdminSecurityMessage("La contraseña debe tener al menos 8 caracteres.", true);
+    return;
+  }
+  if (password !== confirmation) {
+    showAdminSecurityMessage("La confirmación no coincide.", true);
+    return;
+  }
+
+  elements.adminSavePasswordButton.disabled = true;
+  elements.adminSavePasswordButton.textContent = "Guardando";
+  const saved = await saveAdminPassword(password);
+  elements.adminSavePasswordButton.disabled = false;
+  elements.adminSavePasswordButton.textContent = "Guardar contraseña";
+  if (!saved) {
+    return;
+  }
+  elements.adminNewPasswordInput.value = "";
+  elements.adminConfirmPasswordInput.value = "";
 }
 
 async function toggleListening() {
@@ -4822,6 +5044,9 @@ function setCaptureInteractionState(isLocked, { allowListenButton = false } = {}
     elements.adminTagFilter,
     elements.adminNewTagInput,
     elements.adminAddTagButton,
+    elements.adminNewPasswordInput,
+    elements.adminConfirmPasswordInput,
+    elements.adminSavePasswordButton,
     elements.localHelpButton,
     elements.adminLoginSubmitButton,
     elements.adminLoginCancelButton,
@@ -4906,6 +5131,9 @@ function setAppLoadingState(isLoading, options = {}) {
     elements.historyDateFilter,
     elements.historySearchInput,
     elements.adminSelectFilesButton,
+    elements.adminNewPasswordInput,
+    elements.adminConfirmPasswordInput,
+    elements.adminSavePasswordButton,
   ].forEach((control) => {
     if (control) {
       control.disabled = disabled;
@@ -5391,6 +5619,11 @@ function openAdminPanel(panel, { focusSearch = false } = {}) {
   }
 
   setAdminActivePanel(panel);
+  if (panel === "admin-conflicts") {
+    loadAdminConflicts();
+  } else if (panel === "admin-security") {
+    renderAdminSecurity();
+  }
   updateBottomNavState(panel);
   const targetSection = window.innerWidth < 700
     ? getAdminPanelElement(panel)
@@ -5417,6 +5650,8 @@ function getAdminPanelElement(panel) {
     "admin-search": elements.adminToolsSection,
     "admin-upload": elements.adminUploadSection,
     "admin-library": elements.adminLibrarySection,
+    "admin-conflicts": elements.adminConflictsSection,
+    "admin-security": elements.adminSecuritySection,
     "admin-info": elements.adminInfoSection,
   };
 

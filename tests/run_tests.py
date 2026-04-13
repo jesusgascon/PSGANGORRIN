@@ -13,6 +13,7 @@ from test_detection_outcomes import (
     test_classify_outcome_marks_probable_field_match,
     test_field_ambiguity_relaxes_for_strong_leader_but_keeps_plausible_second,
 )
+from test_admin_config import test_admin_password_roundtrip
 
 
 def main() -> None:
@@ -26,6 +27,7 @@ def main() -> None:
         test_calibration_recommends_safe_minimums,
         test_classify_outcome_marks_probable_field_match,
         test_field_ambiguity_relaxes_for_strong_leader_but_keeps_plausible_second,
+        test_admin_password_roundtrip,
     ]
 
     for test in tests:

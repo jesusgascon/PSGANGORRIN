@@ -13,12 +13,13 @@ import ssl
 import threading
 from http import HTTPStatus
 
+from admin_config import is_admin_configured, verify_admin_password, write_admin_password
+from admin_insights import build_conflict_summary
 from calibrate_detection import write_calibration_files
 from library_manifest import SUPPORTED_EXTENSIONS, read_metadata, write_library_files, write_metadata
 
 
 PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
-ADMIN_PASSWORD = os.environ.get("COFRABEAT_ADMIN_PASSWORD", "psangorrin")
 ADMIN_COOKIE = "cofrabeat_admin"
 ADMIN_SESSIONS: set[str] = set()
 REFRESH_LOCK = threading.Lock()
@@ -32,13 +33,21 @@ class CofraBeatHttpsHandler(http.server.SimpleHTTPRequestHandler):
                     "authenticated": self.is_admin_authenticated(),
                     "adminAvailable": True,
                     "requiresHttps": False,
+                    "adminConfigured": is_admin_configured(PROJECT_ROOT),
                 }
             )
 
         if self.path == "/api/admin/metadata":
-            if not self.is_admin_authenticated():
-                return self.send_json({"error": "No autorizado"}, HTTPStatus.UNAUTHORIZED)
+            denial = self.require_admin_session()
+            if denial:
+                return denial
             return self.send_json(read_metadata(PROJECT_ROOT))
+
+        if self.path == "/api/admin/conflicts":
+            denial = self.require_admin_session()
+            if denial:
+                return denial
+            return self.send_json(build_conflict_summary(PROJECT_ROOT))
 
         if self.path in {
             "/",
@@ -60,11 +69,15 @@ class CofraBeatHttpsHandler(http.server.SimpleHTTPRequestHandler):
         if self.path == "/api/admin/metadata":
             return self.handle_admin_metadata()
 
+        if self.path == "/api/admin/password":
+            return self.handle_admin_password()
+
         self.send_error(HTTPStatus.NOT_FOUND, "API no encontrada")
 
     def handle_admin_metadata(self):
-        if not self.is_admin_authenticated():
-            return self.send_json({"error": "No autorizado"}, HTTPStatus.UNAUTHORIZED)
+        denial = self.require_admin_session()
+        if denial:
+            return denial
 
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -77,23 +90,23 @@ class CofraBeatHttpsHandler(http.server.SimpleHTTPRequestHandler):
         return self.send_json({"saved": True, "metadata": read_metadata(PROJECT_ROOT)})
 
     def handle_admin_login(self):
+        if not is_admin_configured(PROJECT_ROOT):
+            return self.send_json(
+                {"authenticated": False, "error": "Configura primero una contraseña de administración."},
+                HTTPStatus.FORBIDDEN,
+            )
         try:
             length = int(self.headers.get("Content-Length", "0"))
             payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
         except (ValueError, json.JSONDecodeError):
             return self.send_json({"authenticated": False}, HTTPStatus.BAD_REQUEST)
 
-        if payload.get("password") != ADMIN_PASSWORD:
+        if not verify_admin_password(PROJECT_ROOT, str(payload.get("password") or "")):
             return self.send_json({"authenticated": False}, HTTPStatus.UNAUTHORIZED)
 
         token = secrets.token_urlsafe(32)
         ADMIN_SESSIONS.add(token)
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("Set-Cookie", f"{ADMIN_COOKIE}={token}; Path=/; SameSite=Strict; HttpOnly; Secure")
-        self.end_headers()
-        self.wfile.write(json.dumps({"authenticated": True}).encode("utf-8"))
+        return self.send_auth_json({"authenticated": True, "adminConfigured": True}, token=token)
 
     def handle_admin_logout(self):
         token = self.get_admin_cookie()
@@ -107,6 +120,31 @@ class CofraBeatHttpsHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps({"authenticated": False}).encode("utf-8"))
 
+    def handle_admin_password(self):
+        configured = is_admin_configured(PROJECT_ROOT)
+        if configured and not self.is_admin_authenticated():
+            return self.send_json({"error": "No autorizado"}, HTTPStatus.UNAUTHORIZED)
+
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+        except (ValueError, json.JSONDecodeError):
+            return self.send_json({"saved": False, "error": "JSON inválido"}, HTTPStatus.BAD_REQUEST)
+
+        new_password = str(payload.get("newPassword") or "").strip()
+        if len(new_password) < 8:
+            return self.send_json(
+                {"saved": False, "error": "La contraseña debe tener al menos 8 caracteres."},
+                HTTPStatus.BAD_REQUEST,
+            )
+
+        write_admin_password(PROJECT_ROOT, new_password)
+        token = self.get_admin_cookie() if configured else None
+        if not token:
+            token = secrets.token_urlsafe(32)
+            ADMIN_SESSIONS.add(token)
+        return self.send_auth_json({"saved": True, "authenticated": True, "adminConfigured": True}, token=token)
+
     def is_admin_authenticated(self) -> bool:
         token = self.get_admin_cookie()
         return bool(token and token in ADMIN_SESSIONS)
@@ -118,6 +156,25 @@ class CofraBeatHttpsHandler(http.server.SimpleHTTPRequestHandler):
             if name == ADMIN_COOKIE:
                 return value
         return None
+
+    def require_admin_session(self):
+        if not self.is_admin_authenticated():
+            return self.send_json({"error": "No autorizado"}, HTTPStatus.UNAUTHORIZED)
+        return None
+
+    def send_auth_json(self, payload: dict, token: str | None = None):
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        if token:
+            self.send_header(
+                "Set-Cookie",
+                f"{ADMIN_COOKIE}={token}; Path=/; SameSite=Strict; HttpOnly; Secure",
+            )
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def send_json(self, payload: dict, status: HTTPStatus = HTTPStatus.OK):
         body = json.dumps(payload).encode("utf-8")
