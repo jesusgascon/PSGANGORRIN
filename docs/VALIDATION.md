@@ -64,6 +64,16 @@ python3 scripts/validate_detection.py --runs 400 --min-seconds 4 --max-seconds 1
 - `FALLO REAL`: se iria a un toque incorrecto
 - `NO USABLE`: la captura no tiene calidad suficiente para competir
 
+## Nota Sobre Confianza Visible
+
+En la version actual, la confianza visible en web y scripts vuelve a ser la confianza real del motor.
+
+No se aplica un boost cosmetico extra sobre el porcentaje mostrado. Eso hace que:
+
+- el historial sea mas honesto
+- `Probable` y `Confirmado` sean mas comparables entre si
+- las decisiones internas y el porcentaje mostrado cuenten la misma historia
+
 ## Resultado Consolidado Actual
 
 Estado actual del dataset de campo:

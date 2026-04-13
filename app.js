@@ -3617,10 +3617,8 @@ function aggregateReferenceVariantScores(scoredVariants, modeKey) {
   return {
     ...best,
     evidenceScore: clamp(best.evidenceScore + aggregateBonus * (modeKey === "field" ? 0.55 : 0.35), 0, 1),
-    signalAdjustedSimilarity: clamp(best.signalAdjustedSimilarity * (1 + aggregateBonus * 0.4), 0, 1),
-    fieldRankingScore: modeKey === "field"
-      ? clamp(best.fieldRankingScore + aggregateBonus, 0, 1)
-      : best.fieldRankingScore,
+    signalAdjustedSimilarity: best.signalAdjustedSimilarity,
+    fieldRankingScore: best.fieldRankingScore,
     diagnostics,
   };
 }
@@ -3801,8 +3799,7 @@ function scoreReferenceVariant(inputFeatures, reference, variant, preset, modeKe
       0.82 +
       diagnostics.patternScore * 0.13 +
       diagnostics.timbreScore * 0.1 +
-      (diagnostics.slowPatternProfile ? 0.02 : 0) +
-      (diagnostics.fieldLeadershipBonus || 0) * 0.45,
+      (diagnostics.slowPatternProfile ? 0.02 : 0),
       0.74,
       1.1,
     )
@@ -3985,8 +3982,7 @@ function estimateMatchEvidence(
       absoluteScore * 0.05 +
       inputFeatures.rhythmicStability * 0.05 +
       fingerprintScore * 0.03 * fingerprintInfluence +
-      voteScore * 0.01 * voteInfluence +
-      (diagnostics.fieldLeadershipBonus || 0) * 0.2,
+      voteScore * 0.01 * voteInfluence,
       0,
       1,
     );
@@ -4046,8 +4042,8 @@ function getMatchAmbiguity(matches, modeKey = state.settings.analysisMode) {
     ? Math.max(6, detectionLimit("minTopMatchMargin", modeKey) - 3)
     : detectionLimit("minTopMatchMargin", modeKey);
   const minimumPlausibleConfidence = Math.max(
-    detectionLimit("minMatchConfidence", modeKey) - 8,
-    state.settings.minimumConfidence - 8,
+    detectionLimit("minMatchConfidence", modeKey),
+    state.settings.minimumConfidence - 4,
   ) + (modeKey === "field" && bestStrongLeader ? 4 : 0);
 
   return matches.slice(1).find((candidate) => {
@@ -4141,27 +4137,7 @@ function clamp(value, min, max) {
 
 function getVisibleConfidence(match) {
   const actualConfidence = Number(match?.confidence || 0);
-  const diagnostics = match?.diagnostics || {};
-  if (!match || state.settings.analysisMode !== "field") {
-    return actualConfidence;
-  }
-
-  const hasClearPatternLead =
-    diagnostics.patternScore >= 0.82 &&
-    diagnostics.timbreScore >= 0.68 &&
-    diagnostics.envelopeSimilarity >= 0.78;
-  if (!hasClearPatternLead) {
-    return actualConfidence;
-  }
-
-  const lift = Math.round(
-    diagnostics.patternScore * 3 +
-    diagnostics.timbreScore * 3 +
-    diagnostics.envelopeSimilarity * 2 +
-    (diagnostics.fieldLeadershipBonus || 0) * 40,
-  );
-
-  return Math.max(actualConfidence, Math.min(98, actualConfidence + Math.max(2, Math.min(8, lift))));
+  return actualConfidence;
 }
 
 function compareRhythmFingerprints(queryFingerprints, targetFingerprints) {

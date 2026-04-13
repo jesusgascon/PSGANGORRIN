@@ -2,6 +2,11 @@
 
 ## En desarrollo
 
+- Limpieza del scoring `field` para reducir inflaciones internas:
+  - la confianza visible vuelve a coincidir con la confianza real del motor
+  - el consenso multi-variante solo refuerza `evidenceScore`
+  - `fieldLeadershipBonus` deja de realimentar `fieldPatternLift` y `estimateMatchEvidence`
+  - el segundo candidato necesita mas solidez para activar `Ambiguo`
 - Ajustes finales de coherencia visual y de estado:
   - el ranking de coincidencias ahora usa barras de confianza real, no relativas al primer candidato
   - accesos rapidos del heroe convertidos en acciones reales y sincronizados con el perfil activo

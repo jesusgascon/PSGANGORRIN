@@ -680,10 +680,8 @@ def aggregate_reference_variant_scores(scored_variants: list[dict], mode_key: st
     return {
         **best,
         "evidenceScore": clamp(best["evidenceScore"] + aggregate_bonus * (0.55 if mode_key == "field" else 0.35), 0, 1),
-        "signalAdjustedSimilarity": clamp(best["signalAdjustedSimilarity"] * (1 + aggregate_bonus * 0.4), 0, 1),
-        "fieldRankingScore": clamp(best["fieldRankingScore"] + aggregate_bonus, 0, 1)
-        if mode_key == "field"
-        else best["fieldRankingScore"],
+        "signalAdjustedSimilarity": best["signalAdjustedSimilarity"],
+        "fieldRankingScore": best["fieldRankingScore"],
         "diagnostics": diagnostics,
     }
 
@@ -821,8 +819,7 @@ def score_reference_variant(
             0.82
             + diagnostics["patternScore"] * 0.13
             + diagnostics["timbreScore"] * 0.10
-            + (0.02 if diagnostics["slowPatternProfile"] else 0)
-            + diagnostics.get("fieldLeadershipBonus", 0) * 0.45,
+            + (0.02 if diagnostics["slowPatternProfile"] else 0),
             0.74,
             1.10,
         )
@@ -1001,8 +998,7 @@ def estimate_match_evidence(
             + absolute_score * 0.05
             + input_features["rhythmicStability"] * 0.05
             + fingerprint_score * 0.03 * fingerprint_influence
-            + vote_score * 0.01 * vote_influence
-            + diagnostics.get("fieldLeadershipBonus", 0) * 0.20,
+            + vote_score * 0.01 * vote_influence,
             0,
             1,
         )
@@ -1072,8 +1068,8 @@ def get_match_ambiguity(
         else limit_for(limits, "minTopMatchMargin", mode_key)
     )
     minimum_plausible_confidence = max(
-        limit_for(limits, "minMatchConfidence", mode_key) - 8,
-        minimum_confidence - 8,
+        limit_for(limits, "minMatchConfidence", mode_key),
+        minimum_confidence - 4,
     ) + (4 if mode_key == "field" and best_strong_leader else 0)
     for candidate in matches[1:]:
         margin = best["confidence"] - candidate["confidence"]
